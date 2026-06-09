@@ -1,0 +1,51 @@
+# AIChat v1.0 — 项目规则
+
+## 项目概述
+AI 聊天网站，前后端分离，调用 DeepSeek API。Vue 3 (前端) + Flask (后端) + SQLAlchemy (数据库)。
+
+## 用户背景
+- 精通 Python（含装饰器），不懂前端
+- 正在学习全栈开发
+- 默认只给出指令和建议，让用户自己执行；用户明确要求代为操作时再出手
+
+## 技术约束
+- Python 解释器：`E:/Python/python.exe`（3.13）
+- pip 安装优先清华镜像源：`-i https://pypi.tuna.tsinghua.edu.cn/simple`
+- 包管理器：pip（不用 poetry/pipenv）
+- 前端：npm（不用 yarn/pnpm）
+
+## 项目结构
+```
+AIChat_v1.0/
+├── backend/                # Flask 后端
+│   ├── app.py             # 入口
+│   ├── config.py          # 配置（环境变量）
+│   ├── models.py          # 数据模型
+│   ├── auth.py            # 用户认证（注册/登录/JWT）
+│   ├── chat.py            # 聊天接口（SSE 流式）
+│   └── requirements.txt
+├── frontend/              # Vue 3 前端
+│   └── src/
+│       ├── views/         # 页面
+│       ├── components/    # 组件
+│       ├── api/           # Axios 封装
+│       ├── router/        # 路由
+│       └── store/         # Pinia 状态
+├── Plan/                  # 项目文档（不部署）
+└── CLAUDE.md
+```
+
+## Git 规范
+- 分支策略：`main`(生产) ← `dev`(开发) ← `feature/xxx`(功能分支)
+- Commit 格式：`feat:` / `fix:` / `chore:` / `docs:` / `refactor:` / `test:`
+- 每次 commit 只做一件事，message 用英文祈使句
+
+## 开发顺序
+1. 后端先跑通（每个接口用 curl 测过），前端再对接
+2. 核心链路优先：注册登录 → 基础聊天 → 流式输出 → 历史记录
+3. 每完成一个功能 commit 一次
+
+## 部署
+- 后端：Railway / Render
+- 前端：Vercel / Netlify
+- 环境变量用 `.env`，绝不提交到 Git

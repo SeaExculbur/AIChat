@@ -1,0 +1,20 @@
+  # Python
+  __pycache__/
+  *.py[cod]
+  *.egg-info/
+  .env
+  venv/
+  *.log
+
+  # Node / 前端
+  node_modules/
+  dist/
+
+  # IDE
+  .idea/
+  .vscode/
+  *.swp
+
+  # 系统
+  .DS_Store
+  Thumbs.db
