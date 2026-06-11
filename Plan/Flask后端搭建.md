@@ -385,7 +385,290 @@ app.register_blueprint(chat_bp)
 
 ---
 
-## 八、代码验证方法
+## 八、app.py 逐行解析
+
+```python
+from flask import Flask
+from flask_cors import CORS
+from flask_jwt_extended import JWTManager
+from config import Config
+from models import db
+
+
+def create_app():
+    app = Flask(__name__)              # ①
+    app.config.from_object(Config)     # ②
+
+    db.init_app(app)                   # ③
+    CORS(app)                          # ④
+    JWTManager(app)                    # ⑤
+
+    with app.app_context():            # ⑥
+        db.create_all()                # ⑦
+
+    return app
+
+
+if __name__ == "__main__":
+    app = create_app()
+    app.run(debug=True)
+```
+
+### ① `app = Flask(__name__)`
+
+Flask 是一个普通 Python 类。`app = Flask(__name__)` 就是实例化一个对象——和你写 `user = User(username="zhangsan")` 一模一样。
+
+`__name__` 是当前 `.py` 文件的名字（Python 内置模块属性）。直接运行时是 `"__main__"`，被 import 时是 `"app"`。写成 `"my_chat_app"` 也行，但约定俗成写 `__name__`——文件改名时不用改这行，import 和直接运行都能正确工作。
+
+### ② `app.config.from_object(Config)`
+
+批量注入配置。等价于手写了：
+
+```python
+app.config["SECRET_KEY"] = Config.SECRET_KEY
+app.config["JWT_SECRET_KEY"] = Config.JWT_SECRET_KEY
+# ... 逐个来一遍
+```
+
+少写重复代码，且不会漏。
+
+### ③ `db.init_app(app)`
+
+**不是"app 管理数据库"，方向反了**——是告诉 db："你以后要管的 app 是这一个。"
+
+`db` 之前只是一个空壳 `SQLAlchemy()`，不知道数据库文件在哪。`init_app(app)` 把 app 的引用存入 db 内部注册表。之后 db 做任何操作时都知道去 `app.config` 里取配置。
+
+**为什么不需要 `with app.app_context()`**：`init_app` 只是存一个引用，不读配置、不连数据库、不执行 SQL，不需要知道"当前活跃的 app"。
+
+### ④ `CORS(app)` — 跨域许可
+
+浏览器的安全规则——**同源策略**：`localhost:5173`（前端）不能向 `localhost:5000`（后端）发请求，因为端口不同。`CORS(app)` 在每次 HTTP 响应的头部加上 `Access-Control-Allow-Origin`，告诉浏览器"这个跨域请求我允许了"。不加这行，前端永远调不通后端。
+
+### ⑤ `JWTManager(app)` — JWT 鉴权初始化
+
+从 `app.config` 读取 `JWT_SECRET_KEY`，注册 `@jwt_required()` 装饰器。之后 `auth.py` 里写的 `@jwt_required()` 能生效，就是因为这里初始化了。
+
+### ⑥⑦ `with app.app_context()` + `db.create_all()`
+
+`db.create_all()` 内部需要知道"当前活跃的 app 是谁"来读取数据库路径配置。但 `create_app()` 还没 `return app`，Flask 还没启动，没人自动设定活跃标记。`with app.app_context()` 手动设标记：进入时把 app 设为当前活跃，退出时取消标记。
+
+`with` 保证即使 `db.create_all()` 抛异常，标记也一定会被清除。
+
+### `create_app()` 返回的 app 里装了什么
+
+```
+app.config   → 所有配置（SECRET_KEY、JWT_SECRET_KEY、DEEPSEEK_API_KEY...）
+db           → 已绑定、已建表的数据库（aichat.db 已生成，User 表已建好）
+JWTManager   → JWT 鉴权就绪，@jwt_required() 可用
+CORS         → 每个响应自动带跨域许可
+```
+
+### `app.run(debug=True)` 启动后终端输出的含义
+
+| 输出 | 含义 |
+|------|------|
+| `WARNING: This is a development server...` | Werkzeug 是开发用单线程服务器，不能扛生产流量 |
+| `Running on http://127.0.0.1:5000` | Flask 已启动，监听本地 5000 端口 |
+| `Restarting with stat` | debug 模式启动了文件监控器，代码改动自动重载 |
+| `Debugger is active!` | Werkzeug 调试器已激活——代码报错时浏览器显示交互式 Python 命令行 |
+| `Debugger PIN: 320-981-406` | 调试器访问密码，基于本机信息自动生成 |
+
+### `debug=True` 的安全隐患
+
+生产环境必须关 debug。debug 模式下，代码报错时浏览器上出现一个**交互式 Python 调试器**——任何人都能在浏览器里直接执行你的 Python 代码。本地开发（localhost）只有你自己能访问，没问题；部署到公网后等于把服务器终端暴露给全世界。
+
+---
+
+## 九、上下文管理器深入
+
+### 什么是上下文管理器
+
+任何 `with x as y:` 语句中，`x` 必须是一个实现了 `__enter__` 和 `__exit__` 方法的对象。
+
+```python
+with 某对象:        # ① 进入：自动调用 某对象.__enter__()
+    做事情           # ② 做事
+                     # ③ 退出：自动调用 某对象.__exit__()（中间报错也会执行）
+```
+
+### 三个等价写法
+
+```python
+# 写法 1：with（最安全）
+with app.app_context():
+    db.create_all()
+
+# 写法 2：手动 push/pop（容易漏 pop）
+ctx = app.app_context()
+ctx.push()
+db.create_all()
+ctx.pop()           # 如果 create_all() 抛异常，这一行执行不到
+
+# 写法 3：手动 + try/finally（啰嗦）
+ctx = app.app_context()
+ctx.push()
+try:
+    db.create_all()
+finally:
+    ctx.pop()        # finally 保证异常时也执行
+```
+
+`with` 就是写法 3 的语法糖——python-dotenv 的作者帮你写了 `__enter__`（调用 `push`）和 `__exit__`（调用 `pop`），你只管写 `with`。
+
+### 为什么需要应用上下文（app context）
+
+`create_app()` 跑到 `db.create_all()` 时，app 对象已经有了，但 **db 不知道"当前在用哪个 app"**。Flask 的设计允许同一进程里跑多个 app 实例——用"当前活跃 app"的标记来决定配置从哪取，而不是全局写死一个 app 引用。
+
+**你的项目只有一个 app，但库的作者不能假设所有用户都只有一个 app。** 上下文就是解决"多 app 共处一个进程时，每个操作自动找对配置"的机制。
+
+### app context 的栈是 Python list，不是 C 调用栈
+
+Flask 内部的"上下文栈"实际上就是一个 Python `list`，`push` = `list.append()`，`pop` = `list.pop()`。和 CPU 层面的硬件调用栈没有关系，只是借用了"栈"这个名字。
+
+---
+
+## 十、WSGI 与 Flask 开发服务器
+
+### WSGI 是什么
+
+WSGI（Web Server Gateway Interface）——Python Web 应用和真正的 Web 服务器之间的**通用插头标准**。
+
+```
+开发环境（你现在）            生产环境（部署后）
+浏览器                        浏览器
+  ↓                            ↓
+Werkzeug（Flask 内置）         Nginx / Caddy（真正 Web 服务器）
+  ↓                            ↓
+Flask 应用                    Gunicorn / uWSGI（WSGI 服务器）
+                               ↓
+                             Flask 应用（多进程副本）
+```
+
+### Werkzeug vs Gunicorn
+
+| | Werkzeug（`app.run()`） | Gunicorn |
+|------|------|------|
+| 并发 | 单线程，一次处理一个请求 | 多 worker 进程，并行处理 |
+| 用途 | 开发调试 | 生产环境 |
+| 稳定性 | 长时间跑可能内存泄漏 | 专门优化过长期稳定性 |
+
+### 为什么生产环境不能直接用 `app.run()`
+
+- 性能：10 个用户同时发消息，第 10 个得等前 9 个处理完
+- 安全：debug 模式下浏览器可以直接执行 Python 代码
+- 稳定：长时间运行会有内存泄漏
+
+---
+
+## 十一、JWT 签名与安全深入
+
+### 签名到底怎么算
+
+```
+Payload: {"user_id": 5}
+    ↓ 和 JWT_SECRET_KEY 一起丢进哈希函数
+JWT_SECRET_KEY = "ilovepython"
+    ↓
+SHA-256 → "3f8a9b2c1d4e5f..."
+    ↓ 这就是签名（token 第三段）
+```
+
+### 验证过程
+
+```
+服务器收到 token → 拆出 Payload + 签名
+    → 用同一个 JWT_SECRET_KEY 对 Payload 重新算哈希
+    → 新签名 == token 里的签名？相等→通过，不相等→被篡改过→拒绝
+```
+
+### 攻击者改 Payload 会怎样
+
+攻击者把 `{"user_id": 5}` 改成 `{"user_id": 999}`，但签名还是旧的。服务器重新算哈希发现不匹配→拒绝。攻击者要伪造签名必须知道 JWT_SECRET_KEY——他不知道，所以做不到。
+
+### 改了 JWT_SECRET_KEY 会发生什么
+
+所有旧 token 立即失效——旧签名是用旧密钥算的，新密钥算出来的签名对不上。这不是 bug，是特性：密钥泄露后更换密钥，所有旧 token 全部作废。
+
+### 穷举 JWT 密钥可行吗
+
+不可能。HS256 产生 256 位哈希，可能的密钥数量约 1.16×10⁷⁷——比地球上所有沙子数量还大几十个数量级。每秒试 10 亿次，试完需要的时间远超宇宙年龄。
+
+### 真正的攻击入口（按威胁排序）
+
+| 攻击方式 | 威胁 | 防御 |
+|---------|------|------|
+| HTTP 明文传输（中间人抓包） | 高 | HTTPS——Vercel + Railway 默认开启 |
+| `.env` 误提交 GitHub | 高 | `.gitignore` |
+| XSS（跨站脚本注入） | 中 | Vue 3 默认对 `{{ }}` 做 HTML 转义 |
+| 浏览器恶意插件读 localStorage | 中 | token 设短过期时间缓解 |
+| JWT 密钥太弱（如 `"123"`） | 低 | 使用强随机字符串 |
+| 用户电脑被物理接触 | 低 | 不属于后端防护范围 |
+
+### 限流保护的是什么
+
+不是 JWT 密钥的安全——是**接口调用频率**。防止攻击者用偷来的 token 反复调 `/api/chat` 把你的 DeepSeek 费用打爆，或者暴力枚举密码撞库登录。
+
+---
+
+## 十二、Git 与二进制文件
+
+### 为什么 `.db` 文件不能进 Git
+
+**原因 1**：运行产物，不是源码。`aichat.db` 是 `db.create_all()` 生成的——clone 项目的人在自己电脑上跑一次也会生成。
+
+**原因 2**：含用户数据。测试账号、密码哈希不应出现在公开仓库。
+
+**原因 3**：Git 的存储机制对二进制文件极度低效。
+
+### Git 的存储机制
+
+Git 存的是**完整快照**（不是差异）。每次 commit 拍一张所有文件的完整照片，用 SHA-1 哈希值命名文件。文本文件两版之间相同的行→同一哈希→自动去重。二进制文件（`.db`）改一个用户，整个数据库文件的字节几乎全变了→几乎没有哈希块可以复用→每次 commit 都存一份接近完整大小的新副本。
+
+```
+文本文件 50 次 commit:  .git/ ≈ 300 KB
+.db 文件 50 次 commit:  .git/ ≈ 5.5 MB
+```
+
+### 二进制文件的合并冲突
+
+Git 面对两个版本不同的 `.db` 文件无法逐行比较合并——只能把两个文件都扔给你，让你选一个保留、另一个丢弃。但 SQLite 文件不能用文本编辑器手动编辑，只能删掉重建。所以 `.gitignore` 直接拦住，不让它进入版本控制。
+
+### Git 合并的三条规则
+
+| 两个人改同一文件的 | Git 的行为 |
+|-----------------|-----------|
+| 不同行（各自独立） | 自动拼接为一个新版本 |
+| 同一行 | 标记冲突，暂停合并，等你手动选 |
+| 同一位置加了不同内容（相邻行） | 也标记冲突——不知道谁先谁后 |
+
+Git 从不在两个合法改动间二选一——它把能合并的部分合并了，合不上的标记出来让你决定。
+
+---
+
+## 十三、报错阅读技巧
+
+### Python 报错堆栈从下往上读
+
+```
+Traceback (most recent call last):       ← 别从这里看
+  File "/lib/.../site-packages/flask/..." ← 第三方库，跳
+  File "/lib/.../site-packages/sqlalchemy/..." ← 第三方库，跳
+  File "auth.py", line 42, in login      ← 你的代码，看这
+KeyError: 'username'                      ← 根因：字典里没 'username'
+```
+
+**最后一行是根本原因，往上找第一个你自己的文件就是错误位置。**
+
+### 训练方法
+
+1. 看最后一行——`XXXError: message`
+2. 在堆栈中定位你自己的 `.py` 文件那行
+3. 把错误信息复述给自己听
+4. 先假设一个原因，再验证——错了换假设，逐步逼近
+
+---
+
+## 十四、代码验证方法
 
 ### 三层验证
 
@@ -412,22 +695,28 @@ Python 的 `import` 是逐行执行——包没装会报 `ImportError`，语法�
 
 ---
 
-## 九、当前项目文件状态
+## 十六、当前项目文件状态
 
 ```
 backend/
 ├── models.py          ✅ User 模型定义完成
 ├── config.py          ✅ 配置类完成
-├── app.py             待写（工厂模式入口）
+├── app.py             ✅ Flask 应用入口，骨架跑通
 ├── auth.py            待写（注册/登录路由）
+├── chat.py            待写（聊天接口）
 ├── requirements.txt   ✅ 依赖清单
-└── .env               ✅ 环境变量
+├── .env               ✅ 环境变量
+└── instance/          🔒 运行时产物，不进 Git
+    └── aichat.db      自动生成，.gitignore 已拦截
 ```
 
 ---
 
-## 十、遇到的问题
+## 十五、遇到的问题
 
 | 问题 | 原因 | 解决 |
 |------|------|------|
 | `flask_sqlalchemy` 报 import 警告 | 只装了 `sqlalchemy`，没装 `flask-sqlalchemy` | `pip install flask-sqlalchemy` |
+| `.gitignore` 规则全部失效（`.vscode/`、`.env`、`__pycache__/` 出现在暂存区） | 创建 `.gitignore` 时每行前面有缩进（tab + 空格），Git 不自动去除前导空白 | 去掉所有行首缩进，顶格写 |
+| `db.create_all()` 把数据库文件建到了 `instance/` 目录下 | Flask 的默认行为——运行实例相关的数据放在 `instance/`，和源码目录分离 | 正常现象，在 `.gitignore` 加上 `instance/` 和 `*.db`，注意每个规则顶格写 |
+| `auth.py` 出现在 `Changes not staged for commit` | IDE 打开文件时自动格式化或保存 | `git restore backend/auth.py` 恢复 |
