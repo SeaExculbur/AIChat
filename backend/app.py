@@ -13,9 +13,9 @@ def create_app():
     CORS(app)
     JWTManager(app)
 
-    # 之后这里注册蓝图
-    # from auth import auth_bp
-    # app.register_blueprint(auth_bp)
+    # 注册蓝图
+    from auth import auth_bp
+    app.register_blueprint(auth_bp)
 
     with app.app_context():
         db.create_all()

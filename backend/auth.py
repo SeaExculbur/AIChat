@@ -1,13 +1,71 @@
-from flask_sqlalchemy import SQLAlchemy
+from flask import Blueprint, request, jsonify
+from flask_jwt_extended import create_access_token
+from werkzeug.security import generate_password_hash, check_password_hash
+from models import db, User
+from flask import redirect, url_for
 
-db = SQLAlchemy()
+auth_bp = Blueprint("auth", __name__)
 
 
-class User(db.Model):
-    __tablename__ = "users"
+@auth_bp.route("/api/auth/register", methods=["POST"])
+def register():
+    data = request.get_json()
+    username = data.get("username")
+    password = data.get("password")
 
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    password_hash = db.Column(db.String(200), nullable=False)
-    created_at = db.Column(db.DateTime, server_default=db.func.now())
-    updated_at = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())
+    if not username or not password:
+        return jsonify({"error": "用户名和密码不能为空"}), 400
+
+    if User.query.filter_by(username=username).first():
+        return jsonify({"error": "用户名已存在"}), 409
+
+    user = User(
+        username=username,
+        password_hash=generate_password_hash(password)
+    )
+    db.session.add(user)
+    db.session.commit()
+
+    token = create_access_token(identity=str(user.id))
+    return jsonify({"message": "注册成功", "access_token": token}), 201
+
+
+@auth_bp.route("/api/auth/login", methods=["POST"])
+def login():
+    data = request.get_json()
+    username = data.get("username")
+    password = data.get("password")
+
+    if not username or not password:
+        return jsonify({"error": "用户名和密码不能为空"}), 400
+
+    user = User.query.filter_by(username=username).first()
+
+    if not user or not check_password_hash(user.password_hash, password):
+        return jsonify({"error": "用户名或密码错误"}), 401
+
+    token = create_access_token(identity=str(user.id))
+    return jsonify({"message": "登录成功", "access_token": token}), 200
+
+@auth_bp.route("/api/auth/userDel", methods=["POST"])
+def userDel():
+    data = request.get_json()
+    username = data.get("username")
+    password = data.get("password")
+
+    if not username or not password:
+        return jsonify({"error": "用户名和密码不能为空"}), 400
+    
+    user = User.query.filter_by(username=username).first()
+
+    if not user or not check_password_hash(user.password_hash, password):
+        return jsonify({"error": "用户名或密码错误"}), 401
+    
+    db.session.delete(user)
+    db.session.commit()
+
+    return jsonify({"message": "删除成功"}), 203
+
+@auth_bp.route("/api/auth/LogOut", methods=["POST"])
+def LogOut():
+    return redirect(url_for("/api/auth/login"))
