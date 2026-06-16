@@ -284,7 +284,207 @@ git config user.name              # 查看当前仓库的用户名
 
 ---
 
-## 六、这次提交了哪些文件
+## 六、Git 底层存储机制
+
+### 四种对象
+
+Git 不是存"文件差异"——是存**完整的快照**。每次 commit 产生四种对象：
+
+| 对象 | 是什么 | 存储方式 |
+|------|--------|---------|
+| **blob** | 文件的实际内容 | SHA-1 哈希命名，存在 `.git/objects/` |
+| **tree** | 目录结构（文件名 → blob hash 的映射） | 同上 |
+| **commit** | 元数据（作者、时间、message）+ 指向 tree + 指向父 commit | 同上 |
+| **tag** | 指向某个 commit 的别名（如 `v1.0`） | 同上 |
+
+### 去重机制
+
+两个文件内容相同 → blob hash 相同 → `.git/objects/` 里只存一份。100 次 commit 里文件没改过 → 每次 commit 的 tree 都指向同一个 blob hash，Git 不重复存储。
+
+### commit hash 的不可篡改链
+
+```
+commit_hash = SHA-1(
+    文件内容的 tree hash
+    + 父 commit 的 hash      ← 父 hash 参与子 hash 计算
+    + 作者 + 时间 + message
+)
+```
+
+改中间任何一个 commit → 它的 hash 变了 → 所有后续 commit 的 hash 全变。从 HEAD 顺着父链往上追溯，重新计算每一步的 hash——如果末尾跟远程对不上，说明中间被篡改了。
+
+---
+
+## 七、Git 与二进制文件
+
+### 为什么 `.db` 文件不能进 Git
+
+1. **运行产物**，不是源码——`db.create_all()` 生成，clone 的人会在自己电脑上重新生成
+2. **含用户数据**——测试账号、密码哈希不应出现在公开仓库
+3. **Git 去重对二进制文件完全失效**
+
+### 根本原因
+
+文本文件改一行 → 大部分 blob 不变 → 哈希复用率高。`.db` 文件改了任意数据 → SQLite 内部 B-Tree 页面结构重新组织 → 几乎所有的字节都变了 → 没有任何旧 blob 可以复用 → 每次 commit 存一份接近完整大小（~100 KB）的新副本。50 次 commit → `.git/` 膨胀到 ~5.5 MB。
+
+### 合并冲突的差异
+
+Git 对文本文件可以逐行比对、自动合并。二进制文件只有"全扔给你选一个"——不能手动编辑合并。
+
+---
+
+## 八、Git 合并规则补充
+
+| 两个人改同一文件的 | Git 的行为 |
+|-----------------|-----------|
+| 不同行（各自独立） | 自动拼接为一个新版本——**不是"新覆盖旧"，是各取改动拼在一起** |
+| 同一行 | 标记冲突 `<<<<<<<` / `=======` / `>>>>>>>`，暂停合并，等你手动选 |
+| 同一位置加了不同内容（相邻行） | 也标记冲突——不知道谁先谁后 |
+
+Git 从不在两个合法改动间二选一——能合并的合并，合不上的标记出来让你决定。
+
+---
+
+## 九、push 底层流程与 fast-forward
+
+### push 的处理流程
+
+```
+① 协商：本地跟远程比对 commit 链，确认对方缺哪些对象
+② 打包：缺的 blob/tree/commit 打包成 packfile（delta 压缩）
+③ 传输：发送 pack 到远程
+④ 远程解压、验证 hash、更新 ref
+```
+
+已有 blob 不重传——每次 push 只传远程确认缺失的对象。
+
+### fast-forward 规则
+
+远端 HEAD = C。你要 push 到的 commit = D：
+
+- D 的祖先链里包含 C → **快进（fast-forward）** → 允许
+- D 的祖先链里不包含 C（如你 amend 销毁了 C，D 的 parent 是 B）→ **拒绝**
+
+Git 问的是"你能在远程的基础上接着推石头，不需要侧移吗？"——而不是"你们是不是一个根开始的？"
+
+### push 输出解读
+
+```
+Enumerating objects: 15, done.     → 扫描出 15 个需要处理的对象（blob + tree + commit，不是文件数）
+Counting objects: 100% (15/15)     → 确认计数无误
+Delta compression using up to 16 threads  → 用 16 线程做 delta 压缩（线程，不是进程）
+Compressing objects: 100% (8/8)    → 8 个被压缩（太小的、已压缩的跳过）
+Writing objects: 100% (8/8)        → 8 个通过网络发送中
+Total 8 (delta 3), reused 0        → 共 8 个 pack 对象，3 个含 delta 差异，0 个从旧 pack 复用
+remote: Resolving deltas: 100% (3/3)  → 远端把 delta 压缩的对象解压还原为完整对象
+```
+
+---
+
+## 十、.gitignore 进阶规则
+
+### 路径前缀规则
+
+| 写法 | 匹配范围 |
+|------|---------|
+| `*.pyc` | 所有 `.pyc` 文件（不写路径前缀 = 全局生效，等效于 `**/*.pyc`） |
+| `node_modules/` | 所有叫 `node_modules` 的文件夹 |
+| `/config.json` | **只**限根目录 |
+| `Plan/test/` | 忽略整个 `test/` 目录 |
+
+### `*` vs `**` vs 尾斜杠
+
+- `*`：匹配当前层级的文件**和文件夹名**——不跨越 `/`
+- `**`：递归匹配任意层级
+- `Plan/test/`：忽略整个目录——最省事的写法
+
+**`Plan/test/*` 能忽略子文件夹吗？** 能——因为 `*` 匹配目录名，目录被忽略后里面所有内容跟着消失。
+
+### `!` 例外规则
+
+```gitignore
+Plan/test/**           # 全部忽略
+!Plan/test/.gitkeep    # 但这个文件例外，保留
+```
+
+顺序必须写在忽略规则之后才生效。
+
+### 重要规则
+
+- 规则行首**绝对不能有缩进**（空格或 tab）——否则 Git 不认
+- 不以 `/` 开头的规则 = 全局生效——你不需要写 `**/` 前缀
+- `.gitignore` 只拦"还没被跟踪"的文件——已 commit 的文件需要先 `git rm --cached`
+
+---
+
+## 十一、fork 与开源协作
+
+### 为什么不能直接 push 别人的仓库
+
+你没有写权限——GitHub 物理上拒绝。fork 就是让 GitHub 自动帮你创建一个你有写权限的副本。
+
+### fork vs 手动建空白仓库
+
+| | 手动建空白仓库 | fork |
+|------|------|------|
+| 归因 | 不显示来源——看起来像原创 | 仓库页顶部显示 "forked from XXX" |
+| 开 PR | 维护者要手动加 remote 才能对比 | GitHub fork 网络自动关联 |
+| 同步上游更新 | 手动加 upstream、手动 pull | fork 天生支持 `git fetch upstream` |
+
+### 开源 PR 完整流程
+
+```
+fork → git clone → git checkout -b xxx → 改代码 
+  → git commit → git push → GitHub 上开 PR
+  → 维护者 review → 改 → push（PR 自动更新）
+  → 维护者 merge → 你的代码进了主仓库
+```
+
+---
+
+## 十二、PR（Pull Request）流程
+
+### PR 是什么
+
+你不是主仓库的直接写权限持有者——你想把自己的改动合入主仓库，需要向维护者发一个**合并请求（Pull Request）**。维护者审查你的代码后决定是否合并。
+
+### 为什么需要 PR
+
+没有 PR 时，任何贡献者可以直接 push 到主分支——没有代码审查，没有质量门禁，一个人误操作直接破坏整个项目。PR 提供了：必须有人看过你的代码才能合入，且审查意见公开透明。
+
+### PR 的标准操作流程
+
+```
+① fork 主仓库 → 你自己的 GitHub 账号下有了副本（你有写权限）
+② git clone 你的 fork → 本地开发
+③ git checkout -b feature/xxx → 从 dev 拉功能分支
+④ 写代码 → git add → git commit → git push
+⑤ GitHub 上点 "New Pull Request" → 描述你改了什么
+⑥ 维护者 review → 提出修改意见
+⑦ 本地改 → commit → push（PR 自动更新，不需要重开）
+⑧ 维护者点 "Merge" → 你的代码进入主仓库
+```
+
+### PR 模板（`.github/PULL_REQUEST_TEMPLATE.md`）
+
+在仓库根目录的 `.github/` 文件夹下创建这个文件，以后任何人（包括你自己）打开发 PR 页面时，描述框会自动填充模板：
+
+```markdown
+## 做了什么
+
+## 怎么测试
+
+- [ ] 本地跑通
+- [ ] 接口测试通过
+```
+
+### 个人迭代也用 PR 的原因
+
+即使只有你一个人开发，从 `feature/xxx` 合并到 `dev` 时走 PR 流程可以：看到自己改了哪些文件、确认 diff 没有调试代码或硬编码密码、PR 模板强迫自己写清楚这次改了什么。以后有协作者加入时，这套流程已经就位。
+
+---
+
+## 十三、这次提交了哪些文件
 
 ```
 .gitignore
