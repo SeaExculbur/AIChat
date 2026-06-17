@@ -16,6 +16,8 @@ def create_app():
     # 注册蓝图
     from auth import auth_bp
     app.register_blueprint(auth_bp)
+    from chat import chat_bp
+    app.register_blueprint(chat_bp)
 
     with app.app_context():
         db.create_all()
