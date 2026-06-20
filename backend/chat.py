@@ -52,14 +52,12 @@ def chat():
                     yield f"data: {word}\n\n" 
             except:
                 yield "data: [ERROR]\n\n"
-        yield "data: [DONE]\n\n"
-
         reply_text = "".join(ai_words)
         ai_message = ChatHistory(user_id=current_user_id, role="assistant", content=reply_text)
         db.session.add(ai_message)
         db.session.commit()
-        
-        
+        yield "data: [DONE]\n\n"
+
     return Response(generate(), mimetype="text/event-stream")
 
 
