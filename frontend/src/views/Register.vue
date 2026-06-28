@@ -1,24 +1,31 @@
 <script setup>
 import { ref } from 'vue'
 
-// 两个变量，分别绑定用户名和密码输入框
+// 三个变量，分别绑定用户名和密码输入框
 const username = ref('')
 const password = ref('')
+const cfm_password = ref('')
 
-// 点登录时触发，暂时只打印到控制台
-const handleLogin = () => {
+// 点注册时触发，暂时只打印到控制台
+const handleRegister = () => {
+  if (password.value != cfm_password.value) {
+  console.log('密码不匹配！')
+  return
+}
   console.log('用户名:', username.value)
   console.log('密码:', password.value)
+  console.log('确认密码:', cfm_password.value)
 }
+
 </script>
 
 <template>
   <div class="page">
     <div class="card">
 
-      <h1>登录</h1>
+      <h1>注册</h1>
 
-      <form @submit.prevent="handleLogin">
+      <form @submit.prevent="handleRegister">
 
         <div class="row">
           <label>用户名</label>
@@ -31,14 +38,19 @@ const handleLogin = () => {
         </div>
 
         <div class="row">
-          <button class="btn" type="submit">登录</button>
+            <label>确认密码</label>
+            <input v-model="cfm_password" type="password" placeholder="请确认密码">
+        </div>
+
+        <div class="row">
+          <button class="btn" type="submit">注册</button>
         </div>
 
       </form>
 
-      <div class="footer-link">
-        <a href="/register">还没有注册？去注册</a>
-      </div>
+        <div class="footer-link">
+            <router-link to="/login">已有账号？去登录</router-link>
+        </div>
 
     </div>
   </div>
