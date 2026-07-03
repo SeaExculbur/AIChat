@@ -1,5 +1,6 @@
 <script setup>
 import { ref } from 'vue'
+import axios from 'axios'
 
 // 三个变量，分别绑定用户名和密码输入框
 const username = ref('')
@@ -7,14 +8,21 @@ const password = ref('')
 const cfm_password = ref('')
 
 // 点注册时触发，暂时只打印到控制台
-const handleRegister = () => {
+const handleRegister = async () => {
   if (password.value != cfm_password.value) {
   console.log('密码不匹配！')
   return
 }
-  console.log('用户名:', username.value)
-  console.log('密码:', password.value)
-  console.log('确认密码:', cfm_password.value)
+  try {
+    const response = await axios.post('/api/auth/register', {
+      username: username.value,
+      password: password.value
+    })
+    console.log('注册成功:', response.data)
+    // 以后：存 token、跳转到 /chat
+  } catch (error) {
+    console.log('注册失败:', error.response?.data)
+  }
 }
 
 </script>
