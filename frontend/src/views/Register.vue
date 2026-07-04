@@ -1,16 +1,19 @@
 <script setup>
 import { ref } from 'vue'
 import axios from 'axios'
+import { useRouter } from 'vue-router'
 
-// 三个变量，分别绑定用户名和密码输入框
 const username = ref('')
 const password = ref('')
 const cfm_password = ref('')
+const errorMessage = ref('')
+const router = useRouter()
 
 // 点注册时触发，暂时只打印到控制台
 const handleRegister = async () => {
+  errorMessage.value = ''
   if (password.value != cfm_password.value) {
-  console.log('密码不匹配！')
+  errorMessage.value = '密码不一致，请重试'
   return
 }
   try {
@@ -19,9 +22,10 @@ const handleRegister = async () => {
       password: password.value
     })
     console.log('注册成功:', response.data)
-    // 以后：存 token、跳转到 /chat
+  localStorage.setItem('token', response.data.access_token)
+  router.replace('/chat')
   } catch (error) {
-    console.log('注册失败:', error.response?.data)
+    errorMessage.value = error.response?.data?.error || '注册失败，请重试'
   }
 }
 
@@ -33,21 +37,23 @@ const handleRegister = async () => {
 
       <h1>注册</h1>
 
-      <form @submit.prevent="handleRegister">
+      <p v-if="errorMessage" class="error-msg">{{ errorMessage }}</p>
+
+      <form @submit.prevent="handleRegister" autocomplete="off">
 
         <div class="row">
           <label>用户名</label>
-          <input v-model="username" type="text" placeholder="请输入用户名">
+          <input v-model="username" type="text" placeholder="请输入用户名" autocomplete="username">
         </div>
 
         <div class="row">
           <label>密码</label>
-          <input v-model="password" type="password" placeholder="请输入密码">
+          <input v-model="password" type="password" placeholder="请输入密码" autocomplete="new-password">
         </div>
 
         <div class="row">
             <label>确认密码</label>
-            <input v-model="cfm_password" type="password" placeholder="请确认密码">
+            <input v-model="cfm_password" type="password" placeholder="请确认密码" autocomplete="new-password">
         </div>
 
         <div class="row">
@@ -125,6 +131,14 @@ input {
 
 .btn:hover {                        /* 鼠标悬停时 */
   background-color: #4096ff;        /* 蓝色变亮 */
+}
+
+/* ======== 错误提示 ======== */
+.error-msg {
+  color: #ff4d4f;
+  text-align: center;
+  margin-bottom: 16px;
+  font-size: 14px;
 }
 
 /* ======== 底部链接 ======== */

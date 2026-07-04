@@ -1,22 +1,27 @@
 <script setup>
 import { ref } from 'vue'
 import axios from 'axios'
+import { useRouter } from 'vue-router'
 
-// 两个变量，分别绑定用户名和密码输入框
 const username = ref('')
 const password = ref('')
+const errorMessage = ref('')
+const router = useRouter()
 
 // 点登录时触发，暂时只打印到控制台
 const handleLogin = async () => {
+  errorMessage.value = ''            // 每次登录前清掉旧提示
   try {
     const response = await axios.post('/api/auth/login', {
       username: username.value,
       password: password.value
     })
     console.log('登录成功:', response.data)
-    // 以后：存 token、跳转到 /chat
+    localStorage.setItem('token', response.data.access_token)  // 存 token
+    router.replace('/chat')                                        // 跳转
+ 
   } catch (error) {
-    console.log('登录失败:', error.response?.data)
+    errorMessage.value = error.response?.data?.error || '登录失败，请重试' 
   }
 }
 
@@ -28,16 +33,18 @@ const handleLogin = async () => {
 
       <h1>登录</h1>
 
-      <form @submit.prevent="handleLogin">
+      <p v-if="errorMessage" class="error-msg">{{ errorMessage }}</p>
+
+      <form @submit.prevent="handleLogin" autocomplete="off">
 
         <div class="row">
           <label>用户名</label>
-          <input v-model="username" type="text" placeholder="请输入用户名">
+          <input v-model="username" type="text" placeholder="请输入用户名" autocomplete="username">
         </div>
 
         <div class="row">
           <label>密码</label>
-          <input v-model="password" type="password" placeholder="请输入密码">
+          <input v-model="password" type="password" placeholder="请输入密码" autocomplete="current-password">
         </div>
 
         <div class="row">
@@ -47,7 +54,7 @@ const handleLogin = async () => {
       </form>
 
       <div class="footer-link">
-        <a href="/register">还没有注册？去注册</a>
+        <router-link to="/register" href="/register">还没有注册？去注册</router-link>
       </div>
 
     </div>
@@ -115,6 +122,14 @@ input {
 
 .btn:hover {                        /* 鼠标悬停时 */
   background-color: #4096ff;        /* 蓝色变亮 */
+}
+
+/* ======== 错误提示 ======== */
+.error-msg {
+  color: #ff4d4f;
+  text-align: center;
+  margin-bottom: 16px;
+  font-size: 14px;
 }
 
 /* ======== 底部链接 ======== */
