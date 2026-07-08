@@ -328,7 +328,125 @@ Payload: {"sub": "5", "exp": 未来时间}
 
 ---
 
-## 七、curl 测试
+## 七、Token 过期与自动续期
+
+### 问题：token 过期会踢人下线
+
+`create_access_token` 默认过期时间 15 分钟。用户正在聊天，15 分钟后突然 401——体验极差。
+
+### 三种解决方案
+
+| 方案 | 怎么做 | 安全性 | 复杂度 |
+|------|--------|--------|--------|
+| 长过期单 token | 把过期时间设成 7 天或 30 天 | 低——token 泄露后有长达 30 天的攻击窗口 | 零 |
+| 双 token（access + refresh） | access 短过期（15min），refresh 长过期（7d），前端拿 refresh 换新 access | 高——access 泄露窗口短，refresh 只和授权服务器通信 | 高——需要额外的 refresh 端点、前端拦截器处理并发刷新竞态 |
+| **滑动过期（sliding expiration）** | 单 token，但每次验证时如果剩余有效期不足，自动发一个新 token | 中——用户一直在用就一直续，停用后自然过期 | 低 |
+
+### 为什么滑动过期适合这个项目
+
+个人项目攻击面小，不需要双 token 的复杂管理机制。滑动过期用一个 token 做到：**活跃用户永不下线，不活跃用户自动过期**。
+
+### 实现
+
+#### 1. 配置 token 过期时间
+
+```python
+# config.py
+class Config:
+    # ...
+    JWT_ACCESS_TOKEN_EXPIRES = 30  # 分钟——30 分钟不用就过期
+```
+
+#### 2. 后端：`after_request` 自动续期
+
+Flask-JWT-Extended 没有内置滑动过期，但可以在 `auth.py` 的 `after_request` 里实现：
+
+```python
+# auth.py
+from datetime import timedelta
+from flask_jwt_extended import create_access_token, get_jwt, get_jwt_identity
+
+# 距离过期还剩多少时间时触发续期
+REFRESH_THRESHOLD = timedelta(minutes=5)
+
+@auth_bp.after_request
+def refresh_expiring_token(response):
+    """
+    每次请求后检查 token 剩余有效期。
+    如果 < 5 分钟但 token 本身没过期，在响应头里塞一个新 token。
+    前端拦截器读到新 token 后自动替换旧的。
+    """
+    try:
+        exp_timestamp = get_jwt()["exp"]            # token 里存的过期时间戳
+        now = datetime.utcnow()
+        remaining = exp_timestamp - now.timestamp()
+        if 0 < remaining < REFRESH_THRESHOLD.total_seconds():
+            # token 还没过期但快过期了——发一个新的
+            user_id = get_jwt_identity()
+            new_token = create_access_token(identity=user_id)
+            response.headers["X-New-Access-Token"] = new_token
+    except (RuntimeError, KeyError):
+        # 当前请求没有有效的 JWT——跳过（注册、登录接口本来就没有）
+        pass
+    return response
+```
+
+**关键逻辑**：`0 < remaining < 5分钟` 这个条件意味着：
+- token 已经过期（`remaining <= 0`）→ `@jwt_required()` 已经在 `after_request` 之前返回了 401，这里拿不到
+- token 剩余超过 5 分钟 → 不需要续，跳过
+- token 剩不到 5 分钟但还没过期 → 续一个新的
+
+#### 3. 前端：Axios 拦截器自动替换 token
+
+```js
+// src/utils/http.js
+import axios from 'axios'
+
+const http = axios.create()
+
+http.interceptors.response.use(
+  (response) => {
+    // 检查响应头里有没有新 token
+    const newToken = response.headers['x-new-access-token']
+    if (newToken) {
+      localStorage.setItem('token', newToken)
+    }
+    return response
+  },
+  (error) => {
+    // 401 → token 真的过期了（续期也没救）→ 踢回登录页
+    if (error.response?.status === 401) {
+      localStorage.removeItem('token')
+      window.location.href = '/login'
+    }
+    return Promise.reject(error)
+  }
+)
+```
+
+### 完整时序
+
+```
+用户登录 → 拿到 token（30 分钟有效期）
+  ↓
+0~25 分钟：正常使用，每次请求都不触发续期
+  ↓
+第 26 分钟：发请求，token 还剩 4 分钟 → 后端在响应里塞新 token
+  ↓
+前端拦截器自动读到 X-New-Access-Token → 替换 localStorage 里的旧 token
+  ↓
+用户无感知——没有掉线、没有重新登录
+  ↓
+连续 30 分钟不用：token 过期 → 下次请求 401 → 跳登录页
+```
+
+### 为什么不在 token 过期后才续
+
+如果 token 已经过期，`@jwt_required()` 直接返回 401——请求根本进不到 `after_request`，续期代码没机会执行。所以必须**在过期之前**续——这就是 `remaining > 0` 这个条件的意义。
+
+---
+
+## 九、curl 测试
 
 ### curl 是什么
 
@@ -368,7 +486,7 @@ curl -X POST http://localhost:5000/api/auth/login -H "Content-Type: application/
 
 ---
 
-## 八、HTTP 方法与状态码
+## 十、HTTP 方法与状态码
 
 ### GET 和 POST 的根本区别
 
@@ -392,7 +510,7 @@ curl -X POST http://localhost:5000/api/auth/login -H "Content-Type: application/
 
 ---
 
-## 九、Python 类与实例（复习）
+## 十一、Python 类与实例（复习）
 
 | | `User`（大写，类） | `user`（小写，实例） |
 |------|------|------|
@@ -406,7 +524,7 @@ curl -X POST http://localhost:5000/api/auth/login -H "Content-Type: application/
 
 ---
 
-## 十、数据库操作速查
+## 十二、数据库操作速查
 
 | 操作 | 代码 |
 |------|------|
@@ -418,7 +536,7 @@ curl -X POST http://localhost:5000/api/auth/login -H "Content-Type: application/
 
 ---
 
-## 十一、`@jwt_required()` 装饰器底层
+## 十三、`@jwt_required()` 装饰器底层
 
 用你熟悉的 Python 装饰器知识理解：
 
@@ -447,7 +565,7 @@ delete_account = jwt_required()(delete_account)
 
 ---
 
-## 十二、.gitignore 规则小结
+## 十四、.gitignore 规则小结
 
 | 写法 | 效果 |
 |------|------|
@@ -466,7 +584,7 @@ delete_account = jwt_required()(delete_account)
 
 ---
 
-## 十三、Flask 本质与后端架构
+## 十五、Flask 本质与后端架构
 
 ### Flask 本质是什么
 
@@ -547,7 +665,7 @@ app.run()           → 跑
 
 ---
 
-## 十四、上下文本质
+## 十六、上下文本质
 
 ### 上下文是什么
 

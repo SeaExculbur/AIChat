@@ -484,14 +484,3 @@ fork → git clone → git checkout -b xxx → 改代码
 
 ---
 
-## 十三、这次提交了哪些文件
-
-```
-.gitignore
-CLAUDE.md
-Plan/Plan.html
-Plan/开发上线流程.md
-README.md
-```
-
-五份文件，一次 commit。commit hash：`683c967`。
