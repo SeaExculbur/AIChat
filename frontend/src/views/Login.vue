@@ -54,7 +54,7 @@ const handleLogin = async () => {
       </form>
 
       <div class="footer-link">
-        <router-link to="/register" href="/register">还没有注册？去注册</router-link>
+        <router-link to="/register">还没有注册？去注册</router-link>
       </div>
 
     </div>
