@@ -34,10 +34,65 @@ const sendMessage = async () => {
   inputText.value = ''
   await scrollToBottom()
 
-  // ② 发请求、收流——下一阶段实现
-  // 现在先用假数据占位
+  // ② AI 占位——先放一个空气泡，后面逐字填充
+  const aiIndex = messages.value.length
+  messages.value.push({ role: 'assistant', content: '' })
   isWaiting.value = true
-  // TODO: fetch SSE 流式通信
+
+  const token = localStorage.getItem('token')
+
+  try {
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ message: text })
+    })
+
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+
+    // ③ 逐块读取 SSE 流
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()        // 把字节数组转成字符串
+    let buffer = ''                          // 存不完整的 SSE 行
+
+    while (true) {
+      const { done, value } = await reader.read()   // 读下一块字节
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })   // 拼到缓冲区
+
+      // ④ 解析 SSE——每行 "data: 字\n\n"
+      const lines = buffer.split('\n')
+      buffer = lines.pop()           // 最后一段可能是半行，留着下次拼
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim()
+        if (!line.startsWith('data: ')) continue
+
+        const word = line.slice(6)   // 切掉 "data: " 前缀
+
+        if (word === '[DONE]') break    // 流结束
+        if (word === '[ERROR]') throw new Error('SSE error')
+
+        // ⑤ 追加到 AI 气泡
+        messages.value[aiIndex].content += word
+        await scrollToBottom()
+      }
+    }
+
+  } catch (error) {
+    console.error('流式请求失败:', error)
+    // 如果 AI 回复为空，把占位气泡删掉
+    if (messages.value[aiIndex] && !messages.value[aiIndex].content) {
+      messages.value.pop()
+    }
+  } finally {
+    isWaiting.value = false
+    await scrollToBottom()
+  }
 }
 </script>
 
