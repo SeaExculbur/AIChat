@@ -114,16 +114,16 @@ const sendMessage = async () => {
       </div>
 
       <!-- 消息气泡 -->
+      <template v-for="(msg, index) in messages" :key="index">
       <div
-        v-for="(msg, index) in messages"
-        :key="index"
+        v-if="msg.content !== ''"
         :class="msg.role === 'user' ? 'user-bubble' : 'ai-bubble'">
-
-          <p>{{ msg.content }}</p>
+        <p>{{ msg.content }}</p>
       </div>
+    </template>
 
       <!-- 等待指示器 -->
-      <div v-if="isWaiting" class="ai-bubble">
+      <div v-if="isWaiting && messages[messages.length - 1]?.content === ''" class="ai-bubble">
           <span class="dot">●</span>
           <span class="dot">●</span>
           <span class="dot">●</span>
