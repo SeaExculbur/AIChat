@@ -12,7 +12,7 @@ const router = useRouter()
 // 点注册时触发，暂时只打印到控制台
 const handleRegister = async () => {
   errorMessage.value = ''
-  if (password.value != cfm_password.value) {
+  if (password.value !== cfm_password.value) {
   errorMessage.value = '密码不一致，请重试'
   return
 }

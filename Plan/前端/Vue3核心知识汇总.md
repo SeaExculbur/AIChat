@@ -187,14 +187,101 @@ const router = createRouter({ history: createWebHistory(), routes })
 
 占位符——当前路由匹配的组件被塞到这个位置。SPA 的核心：整个网站只有一个 HTML 文件，切换页面不刷新，只换 `<router-view />` 里的内容。
 
+### 路由守卫——`beforeEach`
+
+```js
+router.beforeEach((to, from, next) => {
+  const token = localStorage.getItem('token')
+  if (to.path === '/chat' && !token) {
+    next('/login')           // 没票 → 踢走
+  } else if ((to.path === '/login' || to.path === '/register') && token) {
+    next('/chat')            // 有票还登录 → 推进聊天
+  } else {
+    next()                   // 放行
+  }
+})
+```
+
+三个形式参数的实参由 Vue Router 内部传入——`to` 是目标路由对象，`from` 是来源路由对象，`next` 是 Router 给你的控制函回调函数。名字自己起，位置决定身份。`next()` 必须被调用一次——否则导航永远挂起。
+
+**项目实践**：守卫保护 `/chat` 不登录不可见，同时已登录的用户访问登录或注册页自动推到聊天页。路由入口也处理了页面刷新触发的重新导航和路由初始化时的调用。
+
+### 企业级 redirect 模式 vs 简单模式
+
+| | 简单模式（你项目的做法） | 企业 redirect 模式 |
+|--|----------------------|-------------------|
+| 用户被拦后 | 统一推到 `/chat` | 带到 `/chat` 或 `redirect` 参数指定的目的地 |
+| 实现 | 守卫里直接 `next('/login')`，登录后 `router.replace('/chat')` | 守卫把目标 URL 编码进登录页的参数 `/login?redirect=原目标`，登录后读取参数返回 |
+| 适用场景 | 只有聊天页或极少受保护目标的应用 | 多页面、多入口的产品（仪表盘、任务列表、团队设置……） |
+| 复杂度 | 低——守卫单检查 token | 中——守卫编码参数 + 登录页读取参数 |
+| 安全性来源 | 前端守卫 + 后端 `@jwt_required()` 双重检查 | 同左，但多一层"重定向参数仅允许同域路径"的校验 |
+
+**你的场景**：只有 `/chat` 一个目标。不需要 redirect 参数——登完全部统一进聊天页，逻辑足够。
+
 ### useRouter vs useRoute
 
-`useRouter()` 返回路由**器**实例——调 `push`、`replace`。  
-`useRoute()` 返回当前路由信息——`path`、`params`，只读。
+`useRouter()` 返回路由**器**实例——调用 `push`、`replace`。  
+`useRoute()` 返回当前路由信息——`path`、`params`、`query`（如 `?redirect=/chat` 里的 `redirect` 值），只读。
 
 ---
 
-## 五、虚拟 DOM——Vue 的 diff 引擎
+## 六、生命周期钩子——`onMounted`
+
+组件出生后自动调一次。**DOM 已存在**——安全操作 scrollTop、focus。
+
+```js
+import { onMounted } from 'vue'
+
+onMounted(async () => {
+  const res = await axios.get('/api/history', ...)
+  messages.value = res.data.messages
+  await scrollToBottom()
+})
+```
+
+**为什么不是 setup 里直接调**：setup 阶段 DOM 还不存在——`messageBox.value` 是 `null`，`scrollToBottom()` 会崩溃。`onMounted` 是唯一安全的 DOM 操作入口。
+
+---
+
+## 六点五、错误处理与状态清理
+
+### localStorage 管理
+
+```js
+// 存——登录成功
+localStorage.setItem('token', response.data.access_token)
+
+// 取——发请求前
+const token = localStorage.getItem('token')
+
+// 删——退出登录
+const logout = () => {
+  localStorage.removeItem('token')
+  router.replace('/login')
+}
+```
+
+**为什么退出必须删 token**：不删 → 下一个人打开浏览器 → 聊天页直接可进 → 前一个人的聊天记录暴露。服务器无状态注销——前端删 token 是唯一的"退出"操作。
+
+### SSE 流中的错误分级
+
+```js
+catch (error) {
+  if (error.message === 'HTTP 401') {
+    // token 过期——显示提示 + 定时跳转
+    messages.value[aiIndex].content = '登录已过期，请重新登录...'
+    setTimeout(() => router.replace('/login'), 2000)
+  } else if (error.message === 'SSE error') {
+    // DeepSeek 返回错误——显示具体问题
+    messages.value[aiIndex].content = 'AI 回复出错'
+  } else {
+    // 网络断开、服务器 500——兜底提示
+    messages.value[aiIndex].content = 'AI 回复失败，请重试'
+  }
+}
+```
+
+每种错误给用户不同的反馈——沉默失败是最差的体验。
 
 ### 是什么
 

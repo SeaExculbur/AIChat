@@ -1,6 +1,7 @@
 <script setup>
-import { ref, nextTick } from 'vue'
+import { ref, nextTick, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import axios from 'axios'
 
 const router = useRouter()
 
@@ -85,15 +86,49 @@ const sendMessage = async () => {
 
   } catch (error) {
     console.error('流式请求失败:', error)
+
+    if (error.message === 'HTTP 401') {
+    messages.value[aiIndex].content = '登录已过期，请重新登录...'
+  }
     // 如果 AI 回复为空，把占位气泡删掉
     if (messages.value[aiIndex] && !messages.value[aiIndex].content) {
       messages.value.pop()
     }
+
+    if (error.message === 'HTTP 401') {
+    setTimeout(() => router.replace('/login'), 2000)
+  }
+    else {
+      // 网络断开、DeepSeek 限流、服务器500 错误提示
+      messages.value[aiIndex].content = 'AI 回复失败，请重试'
+    }
+
   } finally {
     isWaiting.value = false
     await scrollToBottom()
   }
 }
+
+onMounted(async () => {
+  const token = localStorage.getItem('token')
+  if (!token) return
+
+  try {
+    const res = await axios.get('/api/history', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    messages.value = res.data.messages.reverse()  // 后端返回降序，反转成正序
+    await scrollToBottom()
+  } catch (err) {
+    console.error('加载历史失败:', err)
+  }
+})
+
+const logout = () => {
+  localStorage.removeItem('token')
+  router.replace('/login')
+}
+
 </script>
 
 <template>
@@ -102,7 +137,7 @@ const sendMessage = async () => {
     <!-- ======== 顶部导航栏 ======== -->
     <header class="topbar">
       <span class="logo">AIChat</span>
-      <button class="logout-btn" @click="router.replace('/login')">退出</button>
+      <button class="logout-btn" @click="logout">退出</button>
     </header>
 
     <!-- ======== 消息列表 ======== -->
@@ -284,13 +319,13 @@ const sendMessage = async () => {
   gap: 12px;
   padding: 16px 24px;
   background-color: #fff;
-  border-top: 1px solid #e8e8e8;
+  border-top: 1px solid #0a0a0a;
 }
 
 .input-bar input {
   flex: 1;
   padding: 10px 16px;
-  border: 1px solid #d9d9d9;
+  border: 2px solid #ababab;
   border-radius: 8px;
   font-size: 14px;
   outline: none;

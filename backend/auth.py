@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import create_access_token
 from werkzeug.security import generate_password_hash, check_password_hash
 from models import db, User ,ChatHistory
+from datetime import timedelta
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
 auth_bp = Blueprint("auth", __name__)
@@ -26,7 +27,7 @@ def register():
     db.session.add(user)
     db.session.commit()
 
-    token = create_access_token(identity=str(user.id))
+    token = create_access_token(identity=str(user.id), expires_delta=timedelta(hours=2))
     return jsonify({"message": "注册成功", "access_token": token}), 201
 
 
@@ -44,7 +45,7 @@ def login():
     if not user or not check_password_hash(user.password_hash, password):
         return jsonify({"error": "用户名或密码错误"}), 401
 
-    token = create_access_token(identity=str(user.id))
+    token = create_access_token(identity=str(user.id), expires_delta=timedelta(hours=2))
     return jsonify({"message": "登录成功", "access_token": token}), 200
 
 

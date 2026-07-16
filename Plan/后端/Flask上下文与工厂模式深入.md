@@ -264,6 +264,81 @@ _cv_app: ContextVar[AppContext] = ContextVar("flask.app_ctx")
 
 ---
 
+## 十、生成器与上下文——SSE 流式通信的时序缺陷
+
+### 问题
+
+SSE 流式接口中，`generate()` 生成器在 `return Response(generate())` 之后的 Werkzeug 发送阶段才被迭代。此时 `chat()` 已返回，Flask 自动销毁了请求上下文。生成器内部调用 `db.session.commit()` 时找不到应用上下文 → `RuntimeError: Working outside of application context`。
+
+### 根因
+
+```
+① chat() 调用 return Response(generate()) → Response 包装了生成器的迭代器引用
+② chat() 返回 → Flask 清理应用上下文（pop）
+③ 数毫秒后 Werkzeug 开始发送 HTTP 响应 → 遍历 Response 的迭代器
+④ 生成器终于开始执行 → for 循环 yield 打字 ✅
+⑤ 准备 db.session.commit() → db 查询当前活跃上下文 → ❌ 上下文在步骤② 已出栈
+```
+
+为什么 `db` 对象在闭包里但上下文不在：`db` 是显式赋值给变量的 Python 对象（闭包自动捕获），而 Flask 应用上下文是 `ContextVar` 维护的隐式标记位——闭包不自动捕获它。
+
+### 解法：手动抓 app 进闭包 + with app.app_context()
+
+```python
+def chat():
+    ...
+    app = current_app._get_current_object()   # 在上下文销毁前抓取 app 对象引用
+
+    def generate():
+        ...
+        with app.app_context():               # 生成器内部手动临时建立上下文
+            db.session.add(ai_message)
+            db.session.commit()
+```
+
+`app` 被闭包显式捕获取——生成器在任何时候调用它都能独立创建临时上下文。`with app.app_context()` 是 push/pop 的语法糖，退出时自动清理。
+
+### 和 create_app 里 with app.app_context() 的对比
+
+`create_app()` 里的 `with app.app_context(): db.create_all()` 也是手动建上下文——应用启动时没有请求，Flask 不会自动创建上下文。和生成器内部的 `with app.app_context()` 是同一机制——**在没有自动上下文的时机手动临时建立。**
+
+---
+
+## 十一、Python 异常层级与 GeneratorExit
+
+### 问题
+
+`except:`（裸 except）捕获一切异常，包括 `GeneratorExit`、`KeyboardInterrupt`、`SystemExit`。生成器在销毁时 Python 向其中抛出 `GeneratorExit` 来清理它——裸 `except:` 捕获了这个信号，生成器以为自己不会被关，继续往下跑。但其后的代码无法再被正确执行——生成器的生命周期被强行中断。
+
+### 根因
+
+```
+BaseException
+├── GeneratorExit          ← 生成器被销毁时 Python 内部抛出。不应被捕获
+├── KeyboardInterrupt      ← Ctrl+C。不应被捕获
+├── SystemExit             ← sys.exit()。不应被捕获
+└── Exception              ← 99% 的日常异常
+    ├── ValueError、TypeError、KeyError ...
+```
+
+### 正确写法
+
+```python
+# ❌ 裸 except——吃到不该吃的信号
+except:
+    ...
+
+# ✅ except Exception——放过 GeneratorExit 等系统级异常
+except Exception:
+    ...
+```
+
+### 在 SSE 生成器中的影响
+
+裸 `except:` 在 `for chunk in response:` 循环中吃到 `GeneratorExit` → 执行了 `yield "[ERROR]"` 之后再被 Python 强行销毁 → `for` 循环之后的 commit 代码永远执行不到 → AI 消息一条没存进数据库。
+
+---
+
 ## 七、Flask.__call__ — WSGI 入口源码
 
 ```python

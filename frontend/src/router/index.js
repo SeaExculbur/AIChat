@@ -27,4 +27,15 @@ const router = createRouter({
   routes
 })
 
+router.beforeEach((to, from, next) => {
+  const token = localStorage.getItem('token')
+
+  // 要去聊天页但没有 token → 跳登录
+  if (to.path === '/chat' && !token) {
+    next('/login')
+  } else {
+    next()   // 放行
+  }
+})
+
 export default router

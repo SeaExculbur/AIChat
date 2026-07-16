@@ -3,6 +3,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from openai import OpenAI
 from models import db, ChatHistory
 import os
+from flask import current_app
 
 chat_bp = Blueprint("chat", __name__)
 
@@ -35,29 +36,39 @@ def chat():
         base_url="https://api.deepseek.com/v1"
     )
 
+    app = current_app._get_current_object()    # ← 在上下文还在时抓 app 对象
+
     def generate():
         ai_words = []
         response = client.chat.completions.create(
-        model="deepseek-v4-pro",
-        messages=messages,
-        stream=True,
-        reasoning_effort="high",
-        extra_body={"thinking": {"type": "enabled"}}
-    )
+            model="deepseek-v4-flash",
+            messages=messages,
+            stream=True,
+            reasoning_effort="high",
+            extra_body={"thinking": {"type": "enabled"}}
+        )
         for chunk in response:
             try:
                 word = chunk.choices[0].delta.content
                 if word is not None:
                     ai_words.append(word)
-                    yield f"data: {word}\n\n" 
-            except:
+                    yield f"data: {word}\n\n"
+            except Exception:
                 yield "data: [ERROR]\n\n"
-        reply_text = "".join(ai_words)
-        ai_message = ChatHistory(user_id=current_user_id, role="assistant", content=reply_text)
-        db.session.add(ai_message)
-        db.session.commit()
-        yield "data: [DONE]\n\n"
 
+        reply_text = "".join(ai_words)
+        if reply_text:
+            try:
+                with app.app_context():                                # ← 手动开上下文
+                    if reply_text:
+                        ai_message = ChatHistory(user_id=current_user_id, role="assistant", content=reply_text)
+                        db.session.add(ai_message)
+                        db.session.commit()
+            except Exception as e:
+                print(f"[WARN] AI 消息存库失败: {e}")
+                yield "data: [DB_ERROR]\n\n"
+
+        yield "data: [DONE]\n\n"
     return Response(generate(), mimetype="text/event-stream")
 
 
@@ -66,7 +77,7 @@ def chat():
 def history():
     current_user_id = int(get_jwt_identity())
     page = request.args.get("page", 1 ,type=int)
-    per_page = request.args.get("per_page", 20 ,type=int)
+    per_page = request.args.get("per_page", 100 ,type=int)
     pagination = ChatHistory.query.filter_by(user_id=current_user_id) \
         .order_by(ChatHistory.created_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
 

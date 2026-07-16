@@ -4,6 +4,7 @@ import vue from '@vitejs/plugin-vue'
 export default defineConfig({
   plugins: [vue()],
   server: {
+    allowedHosts: ['lysun', 'frp-off.com'],
     proxy: {
       '/api': 'http://localhost:5000'
     }
