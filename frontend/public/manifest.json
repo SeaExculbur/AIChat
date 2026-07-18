@@ -1,0 +1,17 @@
+{
+  "name": "AIChat",
+  "short_name": "AIChat",
+  "description": "AI 聊天助手，基于 DeepSeek",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7f8fa",
+  "theme_color": "#1677ff",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
