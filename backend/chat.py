@@ -3,6 +3,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from openai import OpenAI
 from models import db, ChatHistory
 import os
+import logger
 from flask import current_app
 
 chat_bp = Blueprint("chat", __name__)
@@ -30,6 +31,7 @@ def chat():
     user_msg_record = ChatHistory(user_id=current_user_id, role="user", content=user_message)
     db.session.add(user_msg_record)
     db.session.commit()
+    logger.info("user_id=%s 发了一条消息", current_user_id)
 
     client = OpenAI(
         api_key=os.getenv("DEEPSEEK_API_KEY"),
@@ -64,7 +66,9 @@ def chat():
                         ai_message = ChatHistory(user_id=current_user_id, role="assistant", content=reply_text)
                         db.session.add(ai_message)
                         db.session.commit()
+                        logger.info("user_id=%s AI 回复已存库，长度=%s", current_user_id, len(reply_text))
             except Exception as e:
+                logger.error("user_id=%s AI 消息存库失败: %s", current_user_id, e)
                 print(f"[WARN] AI 消息存库失败: {e}")
                 yield "data: [DB_ERROR]\n\n"
 
