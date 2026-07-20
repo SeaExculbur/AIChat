@@ -89,18 +89,15 @@ const sendMessage = async () => {
 
     if (error.message === 'HTTP 401') {
     messages.value[aiIndex].content = '登录已过期，请重新登录...'
-  }
+    setTimeout(() => router.replace('/login'), 2000) 
+  } else {
+      // 网络断开、DeepSeek 限流、服务器500 错误提示
+      messages.value[aiIndex].content = 'AI 回复失败，请重试'
+    }
+  
     // 如果 AI 回复为空，把占位气泡删掉
     if (messages.value[aiIndex] && !messages.value[aiIndex].content) {
       messages.value.pop()
-    }
-
-    if (error.message === 'HTTP 401') {
-    setTimeout(() => router.replace('/login'), 2000)
-  }
-    else {
-      // 网络断开、DeepSeek 限流、服务器500 错误提示
-      messages.value[aiIndex].content = 'AI 回复失败，请重试'
     }
 
   } finally {

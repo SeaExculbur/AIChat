@@ -55,7 +55,8 @@ def chat():
                 if word is not None:
                     ai_words.append(word)
                     yield f"data: {word}\n\n"
-            except Exception:
+            except Exception as e:
+                logger.error("SSE chunk 解析失败：%s", e)
                 yield "data: [ERROR]\n\n"
 
         reply_text = "".join(ai_words)
@@ -69,7 +70,6 @@ def chat():
                         logger.info("user_id=%s AI 回复已存库，长度=%s", current_user_id, len(reply_text))
             except Exception as e:
                 logger.error("user_id=%s AI 消息存库失败: %s", current_user_id, e)
-                print(f"[WARN] AI 消息存库失败: {e}")
                 yield "data: [DB_ERROR]\n\n"
 
         yield "data: [DONE]\n\n"

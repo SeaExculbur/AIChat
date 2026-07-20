@@ -77,6 +77,9 @@ def delete_account():
 def change_password():
     data = request.get_json()
     changed_password = data.get("new_password")
+    if not change_password:
+        logger.warning("user_id=%s 新密码校验失败，为空值", user_id)
+        return jsonify("新密码不能为空")
     oldpassword = data.get("old_password")
     user_id = int(get_jwt_identity())
     user = User.query.filter_by(id=user_id).first()
