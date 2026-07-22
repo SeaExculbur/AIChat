@@ -1,0 +1,19 @@
+services:
+  flask:
+    build: ./backend
+    volumes:
+      - ./data:/app/instance
+    env_file:
+      - ./backend/.env
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./frontend/dist:/usr/share/nginx/html:ro
+    depends_on:
+      - flask
+    restart: unless-stopped
