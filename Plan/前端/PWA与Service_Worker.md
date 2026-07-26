@@ -2,7 +2,7 @@
 
 > 项目：AIChat v1.0  
 > 日期：2026-07-17  
-> 覆盖：PWA 三件套（manifest + SW + 注册）、离线缓存策略、SW 生命周期、进程隔离原理  
+> 覆盖：PWA 三件套（manifest + SW + 注册）、navigator 对象与特性检测、离线缓存策略、SW 生命周期、进程隔离原理  
 
 ---
 
@@ -84,7 +84,55 @@ SW 是浏览器在页面之外独立运行的一段 JS 代码——不受页面�
 
 ---
 
-## 四、SW 生命周期——三个事件
+## 四、SW 注册代码——`navigator` 是什么
+
+index.html 底部的三行代码：
+
+```html
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js')
+  }
+</script>
+```
+
+### `navigator`——浏览器的自述对象
+
+`navigator` 是浏览器暴露给 JS 的一个**全局只读对象**，存的是当前浏览器的元信息——"我是谁、我能做什么、我在什么环境里跑"。
+
+```javascript
+navigator.userAgent        // "Mozilla/5.0 ..."——浏览器标识字符串
+navigator.language         // "zh-CN"——浏览器语言
+navigator.onLine           // true/false——用户当前有网吗
+navigator.serviceWorker    // 浏览器支持 Service Worker 吗？
+```
+
+**`navigator` 不是"导航栏"**——和地址栏、书签栏没有任何关系。它存的是**当前浏览器实例的元数据**，和 Python 里读配置文件决定行为是同一个模式——信息源从文件变成了浏览器对象，决策模式不变。
+
+### `'serviceWorker' in navigator`——特性检测
+
+这不是"检查有没有某个 SW 在运行"——是**检查当前浏览器是否支持 Service Worker 这个技术**。
+
+```javascript
+'serviceWorker' in navigator
+// 等价于：navigator 对象上有没有 serviceWorker 这个属性？
+// 有 → 浏览器支持 SW
+// 没有 → 老浏览器（IE、很旧的 Chrome）→ 跳过注册，页面照常工作
+```
+
+这是**特性检测**模式——先问"你能做这个吗"，再做。和 Python 里的 `if hasattr(obj, "method"):` 同一个模式。不检测直接调 → 老浏览器上 `navigator.serviceWorker` 是 `undefined` → `undefined.register()` 抛异常 → 页面崩溃。
+
+### `navigator.serviceWorker.register('/sw.js')`——注册不是"安装"
+
+这行代码做的事：**告诉浏览器：去下载 `/sw.js` 这个文件，把它作为独立的 Service Worker 线程启动。**
+
+- 注册是一次性的——页面加载时执行一次，浏览器记下"这个域名的 SW 文件是这个 URL"
+- 浏览器自己管理 SW 线程的生命周期（下载 → 安装 → 激活 → 更新 → 销毁）
+- `/sw.js` 前面的 `/` 表示从网站根目录开始找——`public/sw.js` 构建后变成 `dist/sw.js`，浏览器访问的路径就是 `/sw.js`
+
+---
+
+## 五、SW 生命周期——三个事件（install / activate / fetch）
 
 ### install——预缓存关键文件
 
@@ -149,7 +197,7 @@ self.addEventListener('fetch', (event) => {
 
 ---
 
-## 五、缓存版本管理——为什么需要 CACHE_NAME
+## 六、缓存版本管理——为什么需要 CACHE_NAME
 
 改版后 SW 代码有更新的 JS 文件。如果缓存里还是旧版的 HTML/JS/CSS，离线时用户看到的是旧界面。
 
@@ -165,7 +213,7 @@ CACHE_NAME = 'aichat-v1'
 
 ---
 
-## 六、不重要的速记
+## 七、不重要的速记
 
 | 知识点 | 一句话 | 用途 |
 |--------|--------|------|
