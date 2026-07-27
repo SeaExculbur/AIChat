@@ -92,6 +92,10 @@ login({ username, password })
 
 不再是向右缩进——是向下一步一步链下去。
 
+### 补充一个进阶坑
+
+`Promise.resolve().then(...)` 还有一个隐藏特性：`.then()` 本身会**返回一个新的 Promise**，这个新 Promise 的状态取决于你箭头函数的返回值。但在你的例子中，因为箭头函数里没有 `return`，默认返回 `undefined`，所以它最终会返回一个状态为 `fulfilled`、值为 `undefined` 的新 Promise。
+
 ### 三个状态
 
 一个 Promise 从创建到结束走三种状态之一：

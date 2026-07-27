@@ -2,7 +2,7 @@
 
 > 项目：AIChat v1.0  
 > 阶段：后端骨架搭建（models + config + app 入口）  
-> 状态：进行中  
+> 状态：已完成  
 
 ---
 
@@ -739,10 +739,17 @@ backend/
 ├── models.py          ✅ User 模型定义完成
 ├── config.py          ✅ 配置类完成
 ├── app.py             ✅ Flask 应用入口，骨架跑通
-├── auth.py            待写（注册/登录路由）
-├── chat.py            待写（聊天接口）
+├── auth.py            ✅ 注册/登录/修改密码/删除账号——curl 测试通过
+├── chat.py            ✅ 流式聊天（SSE）+ 分页历史记录——curl 测试通过
+├── logger.py          ✅ 日志系统——request_id 追踪 + 业务接口
 ├── requirements.txt   ✅ 依赖清单
-├── .env               ✅ 环境变量
+├── .env               ✅ 环境变量（密钥已轮换）
+├── .env.example       ✅ 环境变量模板
+├── gunicorn_config.py ✅ Gunicorn 生产配置
+├── Dockerfile         ✅ Flask 容器镜像
+├── .dockerignore      ✅ 构建排除清单
+├── alembic/           ✅ 数据库迁移系统已初始化
+├── alembic.ini        ✅ 迁移配置
 └── instance/          🔒 运行时产物，不进 Git
     └── aichat.db      自动生成，.gitignore 已拦截
 ```
