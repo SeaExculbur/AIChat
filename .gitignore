@@ -21,5 +21,8 @@ dist/
 .DS_Store
 Thumbs.db
 
+# 数据库
+pgdata/
+
 # 个人文档
 Plan/test/

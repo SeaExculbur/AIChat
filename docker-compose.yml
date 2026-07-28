@@ -1,10 +1,22 @@
 services:
+  db:
+    image: postgres:18-alpine
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: aichat
+      POSTGRES_PASSWORD: aichat_dev
+      POSTGRES_DB: aichat
+    restart: unless-stopped
+    
   flask:
     build: ./backend
     volumes:
       - ./data:/app/instance
     env_file:
       - ./backend/.env
+    depends_on:
+      - db
     restart: unless-stopped
 
   nginx:
