@@ -11,7 +11,10 @@ def create_app():
     app.config.from_object(Config)
 
     db.init_app(app)
-    CORS(app)
+    CORS(app, origins=[
+        "http://localhost:5173",
+        # "https://域名.com",  # TODO: 部署后替换
+    ])
     JWTManager(app)
     init_logger(app)
 
