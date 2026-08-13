@@ -4,6 +4,7 @@ from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
 from alembic import context
+import os
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -47,7 +48,7 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = config.get_main_option("sqlalchemy.url")
+    url = os.getenv("DATABASE_URL") or config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url,
         target_metadata=target_metadata,

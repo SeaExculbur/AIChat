@@ -14,7 +14,7 @@ services:
     volumes:
       - ./data:/app/instance
     env_file:
-      - ./backend/.env
+      - ./backend/.env.production
     depends_on:
       - db
     restart: unless-stopped
