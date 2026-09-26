@@ -24,9 +24,6 @@ def create_app():
     from chat import chat_bp
     app.register_blueprint(chat_bp)
 
-    with app.app_context():
-        db.create_all()
-
     return app
 
 

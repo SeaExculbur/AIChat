@@ -3,7 +3,9 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from openai import OpenAI
 from models import db, ChatHistory, Conversation
 import os
+import json
 import logger
+from datetime import timezone
 
 chat_bp = Blueprint("chat", __name__)
 
@@ -12,10 +14,21 @@ def paginate_query(query):
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 20, type=int)
     return query.paginate(page=page, per_page=per_page, error_out=False)
+
 client = OpenAI(
     api_key=os.getenv("DEEPSEEK_API_KEY"),
     base_url="https://api.deepseek.com/v1"
 )
+
+# 时间序列化——补时区标记后输出 ISO 8601
+def iso_utc(dt):
+    """SQLite 存的是 naive datetime（值本身是 UTC）——补上时区标记。
+    PostgreSQL 读出来是 aware datetime——已有标记，直接输出。"""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
 
 # 聊天业务主接口
 @chat_bp.route("/api/chat", methods=["POST"])
@@ -30,6 +43,7 @@ def chat():
         return jsonify({"error": "消息不能为空"}), 400
 
     # 创建新会话
+    title = None
     if conversation_id is None:
         title = user_message[:20]
         conv = Conversation(user_id=current_user_id, title=title)
@@ -52,7 +66,10 @@ def chat():
     logger.info("user_id=%s 发了一条消息", current_user_id)
 
     def generate():
-        yield f"data: {{\"conversation_id\": {conversation_id}}}\n\n"
+        meta = {"conversation_id": conversation_id}
+        if title:
+            meta["title"] = title
+        yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
         ai_words = []
         response = client.chat.completions.create(
             model="deepseek-v4-flash",
@@ -97,7 +114,7 @@ def history():
     )
 
     return jsonify({
-        "messages": [{"role": m.role, "content": m.content, "time": m.created_at.isoformat()} for m in pagination.items],
+        "messages": [{"role": m.role, "content": m.content, "time": iso_utc(m.created_at)} for m in pagination.items],
         "page": pagination.page,
         "pages": pagination.pages,
         "total": pagination.total
@@ -112,7 +129,7 @@ def list_conversation():
     .order_by(Conversation.updated_at.desc()).all()
 
     return jsonify([
-        {"id": c.id, "title": c.title, "created_at": c.created_at.isoformat(), "updated_at": c.updated_at.isoformat()}
+        {"id": c.id, "title": c.title, "created_at": iso_utc(c.created_at), "updated_at": iso_utc(c.updated_at)}
         for c in convs
     ]), 200
 
@@ -135,7 +152,7 @@ def get_conversation(conv_id):
     return jsonify({
         "id": conv.id,
         "title": conv.title,
-        "messages": [{"role": m.role, "content": m.content, "time": m.created_at.isoformat()}
+        "messages": [{"role": m.role, "content": m.content, "time": iso_utc(m.created_at)}
                      for m in pagination.items],
         "page": pagination.page,
         "pages": pagination.pages,
