@@ -11,6 +11,7 @@ class User(db.Model):
     password_hash = db.Column(db.String(200), nullable=False)
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())
+    is_active = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
     
 class ChatHistory(db.Model):
     __tablename__ = "chat_history"
