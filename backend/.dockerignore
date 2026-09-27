@@ -6,3 +6,4 @@ venv
 instance
 .git
 .gitignore
+.env*
