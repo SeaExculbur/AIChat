@@ -3,6 +3,8 @@
 > 项目：AIChat v1.0
 > 日期：2026-07-22
 > 覆盖：Docker 核心概念、镜像与容器、多阶段构建、Gunicorn、Nginx 反向代理、Docker Compose、层缓存机制、GIL 与多进程
+>
+> **2026-10-22 更新**：本文部分示例是早期版本。当前生产配置：`frontend/Dockerfile` 已启用多阶段构建；`flask` 的 `env_file` 指向 `backend/.env.production`；生产数据库为 PostgreSQL 18，数据卷为 `./pgdata:/var/lib/postgresql`。以 `docker-compose.yml` 和《公网上线实录》为准。
 
 ---
 

@@ -169,7 +169,194 @@ echo ".claude/" >> .gitignore    # 追加一行到文件末尾
 
 ---
 
-## 七、本次操作总结
+## 七、git mv——移动/重命名 + 暂存
+
+```bash
+git mv 旧路径 新路径
+```
+
+大致等价于：
+
+```bash
+mv 旧路径 新路径
+git add -A
+```
+
+区别是 `git status` 会显示成 `R`（renamed），而不是"删除一个 + 新增一个"。
+
+### Git 其实不记录"重命名"
+
+Git 的对象模型里没有 rename 这个动作。提交里保存的是"旧路径不存在了、新路径出现了"，展示 diff 时通过**内容相似度**推断这是一次重命名。
+
+- `git log --follow 文件`：跨重命名追踪单个文件的历史
+- `git diff -M`：开启重命名检测
+
+### `R` 与 `RM`
+
+| 标记 | 含义 |
+|---|---|
+| `R` | 已暂存的重命名，内容没变 |
+| `RM` | 已暂存的重命名 + 工作区又改了内容 |
+
+`RM` 的文件，`git commit` 只提交暂存区里的版本（重命名 + 旧内容），工作区的新内容要再 `git add` 才会进下一次提交。
+
+### 为什么用 `git mv`
+
+- 历史、blame、review 都更连续
+- 大量整理目录时，diff 更清晰
+
+**限制**：只能移动已经被 Git 跟踪的文件。被 `.gitignore` 忽略的文件只能用普通 `mv`。
+
+---
+
+## 八、merge commit vs 普通 commit
+
+### 父提交数量不同
+
+```
+普通 commit：  父提交 A ← 新 commit
+merge commit： 父提交 A ─┐
+                          ├→ merge commit
+               父提交 B ─┘
+```
+
+- 普通 commit 只有一个父提交，diff 就是"这次改了什么"
+- merge commit 有两个（或更多）父提交，意义是"把两条历史线接在一起"
+
+### 记录的内容不同
+
+| | 普通 commit | merge commit |
+|---|---|---|
+| 记录对象 | 一次具体的代码/文档改动 | 一次分支整合事件 |
+| 典型 message | `fix: 数据库密码改为环境变量注入` | `Merge branch 'dev' into main` |
+| diff | `git show <commit>` 直接看到 | 干净合并时 `git show` 可能什么都不显示 |
+| 粒度 | 细，一次一件事 | 粗，一次合并一批提交 |
+
+### 为什么干净合并看不到 diff
+
+merge commit 的文件树 = 被合并分支最新提交的文件树，它自己**没有新增代码改动**。真正的改动在被合并的那些普通 commit 里。
+
+如果合并时手动解决了冲突，merge commit 可能包含额外的冲突解决改动，这时 message 要写清"冲突是怎么解的"。
+
+### 合并消息的三种写法
+
+```bash
+git merge --no-ff dev -m "merge: 发布 dev 到 main"   # 自定义
+git merge --no-ff dev --no-edit                     # 用默认 "Merge branch 'dev' into main"
+git merge --no-ff dev                               # 打开编辑器
+```
+
+**普通 commit 的 message 不会被自动复制成 merge message**；merge commit 是另一条提交，记录的是合并动作。
+
+---
+
+## 九、分支合并实操
+
+### 先看差异
+
+```bash
+git fetch origin
+git log --oneline --left-right --graph dev...feature/manual-approval
+```
+
+- `<` 开头：只在 `dev` 上的提交
+- `>` 开头：只在 feature 上的提交
+- 只有 `>`：feature 领先，`dev` 没有独有提交，合并不会冲突
+
+### 合并 feature 到 dev
+
+```bash
+git checkout dev
+git pull --ff-only origin dev
+git merge --no-ff feature/manual-approval -m "merge: 合并功能到 dev"
+git push origin dev
+```
+
+- `--no-ff`：即使能快进，也强制生成 merge commit，保留"这是一次功能分支合并"的记录
+- `--ff-only`：只允许快进，不能快进就报错；用于"同步远端，不要产生合并提交"
+
+### 创建 main 分支
+
+如果远端还没有 main：
+
+```bash
+git checkout dev
+git checkout -b main
+git push -u origin main
+```
+
+验证：
+
+```bash
+git branch -vv
+git ls-remote --heads origin
+```
+
+### 验证内容一致
+
+`main` 和 feature 的 commit hash 不同，但文件树可能相同：
+
+```bash
+git diff --stat main feature/manual-approval   # 空输出 = 内容一致
+git show --no-patch --format="%H%n%P" main     # 第二行应有两个父提交 hash
+```
+
+### 冲突处理
+
+```bash
+git status
+# 编辑冲突文件，删掉 <<<<<<< ======= >>>>>>> 标记
+git add <冲突文件>
+git merge --continue
+```
+
+---
+
+## 十、tag 与 GitHub Release
+
+### tag 是给 commit 起的固定名字
+
+| 类型 | 命令 | 特点 |
+|---|---|---|
+| 轻量 tag | `git tag v0.1.0` | 只是一个指针 |
+| annotated tag | `git tag -a v0.1.0 -m "..."` | 独立对象，记录打标签的人、时间、说明，发布版本推荐 |
+
+推送 tag：
+
+```bash
+git tag -a v0.1.0 -m "AIChat v0.1.0 — 首个可上线版本"
+git push origin v0.1.0
+```
+
+### Release 是 tag + 发布说明
+
+GitHub 的 Release 不会触发部署，它只是：
+
+- 给某个 commit 打 tag
+- 附上发布说明、源码包
+- 在仓库页面形成一个可回溯的版本节点
+
+Release notes 建议写：
+
+- 功能列表
+- 技术栈
+- **已知限制**（比只写"已完成"更有价值）
+- 部署方式
+
+```bash
+gh release create v0.1.0 --title "AIChat v0.1.0" --notes-file RELEASE_NOTES.md
+```
+
+### 版本号怎么选
+
+- `0.x`：功能可用，但还有明显缺口、无自动化测试——符合 MVP 阶段
+- `1.0`：对外承诺稳定接口和较完整的质量保障
+
+项目版本号和"稳定度"是两件事，Release notes 里写清楚即可。
+
+---
+
+## 十一、本次操作总结
 
 ```
 任务                          命令
@@ -179,4 +366,11 @@ echo ".claude/" >> .gitignore    # 追加一行到文件末尾
 取消跟踪但保留本地文件         git rm --cached
 抹掉全部历史                  git checkout --orphan + 删旧分支
 追加内容到文件                echo "..." >> 文件名
+移动/重命名并暂存             git mv 旧 新
+查看分支差异                  git log --left-right --graph dev...feature
+保留合并节点                  git merge --no-ff
+接受默认合并消息              git merge --no-edit
+快进合并                      git merge --ff-only
+创建并推送新分支              git checkout -b main → git push -u origin main
+打发布标签                    git tag -a v0.1.0 -m "..."
 ```

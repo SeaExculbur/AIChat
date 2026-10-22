@@ -192,3 +192,5 @@ docker compose exec flask alembic upgrade head
 ```
 
 或者将来在 Dockerfile 的 CMD 之前自动执行（多副本需注意并发冲突）。开发阶段保持手动——先知道工具在做什么，再谈自动化。
+
+**生产环境变量注入**：flask 容器的变量由 Compose 的 `env_file` 从 `backend/.env.production` 注入；根目录 `.env` 只用于 Compose 的 `${POSTGRES_PASSWORD}` 插值。完整链路见 `Plan/部署与运维/环境变量与密钥注入.md`。

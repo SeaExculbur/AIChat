@@ -141,7 +141,7 @@ docker compose exec flask alembic upgrade head
 
 生产环境变量使用 `backend/.env.production`（不入库），compose 通过 `env_file` 注入；模板见 `backend/.env.example`。
 
-> PostgreSQL 密码通过项目根目录的 `.env` 提供给 Compose 插值（`${POSTGRES_PASSWORD}`），必须与 `backend/.env.production` 里 `DATABASE_URL` 的密码一致。根目录 `.env` 和 `backend/.env.production` 都不入库。
+> PostgreSQL 密码通过项目根目录的 `.env` 提供给 Compose 插值（`${POSTGRES_PASSWORD}`），必须与 `backend/.env.production` 里 `DATABASE_URL` 的密码一致。根目录 `.env` 和 `backend/.env.production` 都不入库。完整链路见 `Plan/部署与运维/环境变量与密钥注入.md`。
 
 ## License
 
