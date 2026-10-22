@@ -25,5 +25,11 @@ Thumbs.db
 # 数据库
 pgdata/
 
-# 个人文档
-Plan/test/
+# HTTPS 证书验证临时文件
+certbot/
+
+# 个人文档（自测题、练习脚本、训练方法，不纳入版本库）
+Plan/学习与自测/自测题/
+Plan/学习与自测/练习脚本/
+Plan/学习与自测/训练方法/
+Plan/数据库/B+树自述.md

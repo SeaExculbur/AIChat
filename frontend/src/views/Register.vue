@@ -1,29 +1,31 @@
 <script setup>
 import { ref } from 'vue'
 import axios from 'axios'
-import { useRouter } from 'vue-router'
 
 const username = ref('')
 const password = ref('')
 const cfm_password = ref('')
 const errorMessage = ref('')
-const router = useRouter()
+const successMessage = ref('')
 
-// 点注册时触发，暂时只打印到控制台
 const handleRegister = async () => {
+  successMessage.value = ''
   errorMessage.value = ''
   if (password.value !== cfm_password.value) {
   errorMessage.value = '密码不一致，请重试'
   return
 }
   try {
-    const response = await axios.post('/api/auth/register', {
+        const response = await axios.post('/api/auth/register', {
       username: username.value,
       password: password.value
     })
-    console.log('注册成功:', response.data)
-  localStorage.setItem('token', response.data.access_token)
-  router.replace('/chat')
+
+    successMessage.value = response.data.message || '注册成功，请等待管理员放行'
+    errorMessage.value = ''
+    username.value = ''
+    password.value = ''
+    cfm_password.value = ''
   } catch (error) {
     errorMessage.value = error.response?.data?.error || '注册失败，请重试'
   }
@@ -38,6 +40,8 @@ const handleRegister = async () => {
       <h1>注册</h1>
 
       <p v-if="errorMessage" class="error-msg">{{ errorMessage }}</p>
+      <p v-if="successMessage" class="success-msg">{{ successMessage }}</p>
+
 
       <form @submit.prevent="handleRegister" autocomplete="off">
 
@@ -140,6 +144,15 @@ input {
   margin-bottom: 16px;
   font-size: 14px;
 }
+
+/* ======== 成功显示 ======== */
+.success-msg {
+  color: #52c41a;          /* 绿色 */
+  text-align: center;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
 
 /* ======== 底部链接 ======== */
 .footer-link {

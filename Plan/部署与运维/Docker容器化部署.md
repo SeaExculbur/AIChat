@@ -657,18 +657,64 @@ COPY . .                   → 层 4：新增 /app/chat.py、/app/auth.py 等
 
 **层不"执行"命令——层存储的是命令执行后产生的文件变更结果。** `RUN pip install flask` 让 pip 在文件系统上创建了新目录和新文件——这一层存的就是这些新增的文件（打包成一个目录压缩包）。其他没变的文件（`/bin/sh`、`/lib/libc.so`）不在这一层里——它们在更底下的层里。和 Git commit 只存增量差异、不存全量快照是同一个模式。
 
-### compose 调度的完整过程
+
+### compose 调度的完整过程——`docker compose up -d --build` 时序
 
 ```
-docker compose up -d --build
-    │
-    ├── 读 docker-compose.yml
-    ├── 检查每个服务的镜像来源
-    │   ├── image: nginx:alpine → docker pull（已缓存则跳过）
-    │   ├── image: postgres:18-alpine → docker pull
-    │   └── build: ./backend → docker build（读 backend/Dockerfile）
-    ├── 创建 Docker 内部网络
-    ├── 按 depends_on 顺序启动容器
-    ├── 挂载 volumes（宿主机目录 → 容器内）
-    ├── 注入 env_file（环境变量）
-    └── 启动完成——三容器运行中
+1. 读 docker-compose.yml
+   → 发现 3 个服务：db（image）、flask（build）、nginx（image）
+
+2. 并行拉取不需要构建的镜像（db + nginx）
+   ├── docker pull postgres:18-alpine    ┐
+   └── docker pull nginx:alpine           ┘  同时进行，互不等待
+
+3. 构建需要本地构建的镜像（flask）
+   → 读 backend/Dockerfile
+   → docker build ./backend
+        ├── FROM python:3.13-slim         ← 如果没拉过，先 pull 基础镜像
+        ├── RUN pip install ...           ← 逐行执行 Dockerfile 指令
+        ├── COPY . .                      ← 每行产生一层（变更结果）
+        └── 构建完成 → 镜像 aichat_v10-flask
+
+   注意：步骤 2 和步骤 3 是并行的——拉 nginx 镜像和构建 flask 镜像同时进行
+
+4. 创建 Docker 内部网络
+   → 所有容器加入同一虚拟网络（如 172.18.0.0/16）
+   → 内置 DNS 启动（127.0.0.11），服务名自动注册
+
+5. 按 depends_on 顺序启动容器
+   ├── 第 1 批：db（depends_on 无依赖，先启）
+   │       → 从 postgres:18-alpine 镜像创建容器
+   │       → 注入环境变量（POSTGRES_USER/PASSWORD/DB）
+   │       → 挂载数据卷（./pgdata -> /var/lib/postgresql/data）
+   │       → PostgreSQL 进程启动
+   │
+   ├── 第 2 批：flask（depends_on: - db）
+   │       → 从 aichat_v10-flask 镜像创建容器
+   │       → 注入 .env 环境变量（env_file）
+   │       → 挂载数据卷（./data -> /app/instance）
+   │       → 执行 CMD：gunicorn -c gunicorn_config.py "app:create_app()"
+   │       → Master fork 4 worker，开始监听 5000
+   │
+   └── 第 3 批：nginx（depends_on: - flask）
+           → 从 nginx:alpine 镜像创建容器
+           → 挂载 nginx.conf + dist/（volumes）
+           → 映射端口 80:80（ports）
+           → 执行默认 CMD：nginx -g "daemon off;"
+           → Nginx 监听 80，/ -> 静态文件，/api/ -> 转发 flask:5000
+
+6. 启动完成——三容器运行中
+```
+
+### 关键时序区分
+
+| 阶段 | 什么时候 | 哪个文件负责 |
+|------|------|------|
+| 拉基础镜像 | 构建开始前或 FROM 时 | compose 的 image 或 Dockerfile 的 FROM |
+| 执行 RUN/COPY | 构建时（docker build） | Dockerfile |
+| 挂载 volumes | 容器启动时 | compose 的 volumes |
+| 注入环境变量 | 容器启动时 | compose 的 env_file / environment |
+| 执行 CMD | 容器启动时 | Dockerfile 的 CMD |
+| 端口映射 | 容器启动时 | compose 的 ports |
+
+Dockerfile 管镜像怎么造（构建阶段），compose 管造好的镜像怎么跑（运行阶段）。image 开头的服务直接拉现成的镜像，build 开头的服务去找对应目录下的 Dockerfile 构建自己的镜像——拉取和构建是并行的。
