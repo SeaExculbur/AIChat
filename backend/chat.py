@@ -50,6 +50,11 @@ def chat():
         db.session.add(conv)
         db.session.commit()
         conversation_id = conv.id
+    else:
+        # 检验会话归属：
+        conv = Conversation.query.filter_by(id=conversation_id, user_id=current_user_id).first()
+        if conv is None:
+            return jsonify({"error": "会话不存在"}), 404
 
     # 查该用户最近 20 条历史消息
     history = ChatHistory.query.filter_by(user_id=current_user_id, conversation_id=conversation_id) \
@@ -62,6 +67,7 @@ def chat():
     # 存用户消息
     user_msg_record = ChatHistory(user_id=current_user_id, conversation_id=conversation_id, role="user", content=user_message)
     db.session.add(user_msg_record)
+    conv.updated_at = db.func.now()
     db.session.commit()
     logger.info("user_id=%s 发了一条消息", current_user_id)
 
@@ -83,7 +89,7 @@ def chat():
                 word = chunk.choices[0].delta.content
                 if word is not None:
                     ai_words.append(word)
-                    yield f"data: {word}\n\n"
+                    yield f"data: {json.dumps(word)}\n\n"
             except Exception as e:
                 logger.error("SSE chunk 解析失败：%s", e)
                 yield "data: [ERROR]\n\n"

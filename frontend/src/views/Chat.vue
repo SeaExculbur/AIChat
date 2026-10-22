@@ -17,12 +17,80 @@ const isWaiting = ref(false)
 // 消息列表的 DOM 引用——用于自动滚到底部
 const messageBox = ref(null)
 
+// 会话列表——每条 { id, title, updated_at }
+const conversations = ref([])
+
+// 当前选中的会话 ID，null = 新会话（还没发过消息）
+const currentConvId = ref(null)
+
+// 当前会话已加载到第几页（滚动加载用）
+const currentPage = ref(1)
+
+// 还有更多历史页吗（滚动到顶再加载）
+const hasMore = ref(false)
+
 // 滚到消息列表最底部
 const scrollToBottom = async () => {
   await nextTick()
   if (messageBox.value) {
     messageBox.value.scrollTop = messageBox.value.scrollHeight
   }
+}
+
+// 时间格式化——统一把时间字符串转成 "2026-08-14 10:30" 
+const formatTime = (timeStr) => {
+  if (!timeStr) return ''
+  return new Date(timeStr).toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
+
+const handleNewConversation = (id, title) => {
+  if (currentConvId.value === null) {
+    // 新的会话状态，加到左侧列表顶部
+    conversations.value.unshift({
+      id: id,
+      title: title || '新对话',
+      updated_at: new Date().toISOString()
+    })
+  }
+  currentConvId.value = id
+}
+
+// 点击会话条目
+const selectConversation = async (id) => {
+  if (isWaiting.value) return                 // ① 正在等 AI 回复——不许切
+  if (id === currentConvId.value) return      // ② 点的就是当前会话——不重复加载
+
+  currentConvId.value = id                    // ③ 切换当前会话
+  currentPage.value = 1                       // ④ 分页重置到第一页
+
+  const token = localStorage.getItem('token')
+
+  try {
+    const res = await axios.get(`/api/conversations/${id}?page=1&per_page=20`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    messages.value = res.data.messages.reverse()   // ⑤ 降序 → 反转成正序
+    hasMore.value = res.data.page < res.data.pages  // ⑥ 还有更早的消息吗
+    await scrollToBottom()
+  } catch (err) {
+    console.error('加载会话失败:', err)
+  }
+}
+
+// "+ 新对话"——清空回到新会话状态
+const startNewChat = () => {
+  if (isWaiting.value) return
+  currentConvId.value = null
+  messages.value = []
+  inputText.value = ''
+  currentPage.value = 1
+  hasMore.value = false
 }
 
 // 发送消息
@@ -49,7 +117,9 @@ const sendMessage = async () => {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
-      body: JSON.stringify({ message: text })
+      body: JSON.stringify({ message: text,
+        conversation_id: currentConvId.value
+       })
     })
 
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
@@ -58,6 +128,7 @@ const sendMessage = async () => {
     const reader = response.body.getReader()
     const decoder = new TextDecoder()        // 把字节数组转成字符串
     let buffer = ''                          // 存不完整的 SSE 行
+    let isFirstChunk = true
 
     while (true) {
       const { done, value } = await reader.read()   // 读下一块字节
@@ -73,13 +144,24 @@ const sendMessage = async () => {
         const line = lines[i].trim()
         if (!line.startsWith('data: ')) continue
 
-        const word = line.slice(6)   // 切掉 "data: " 前缀
+        const raw = line.slice(6)
 
-        if (word === '[DONE]') break    // 流结束
-        if (word === '[ERROR]') throw new Error('SSE error')
+      if (raw === '[DONE]') break
+      if (raw === '[DB_ERROR]') throw new Error('DB error')
+      if (raw === '[ERROR]') throw new Error('SSE error')
 
-        // ⑤ 追加到 AI 气泡
-        messages.value[aiIndex].content += word
+      const payload = JSON.parse(raw)      // 首帧是对象，正文帧是字符串
+
+      if (isFirstChunk) {
+        isFirstChunk = false
+        if (payload && typeof payload === 'object' && payload.conversation_id) {
+          handleNewConversation(payload.conversation_id, payload.title)
+          continue
+        }
+      }
+
+      messages.value[aiIndex].content += payload
+
         await scrollToBottom()
       }
     }
@@ -111,13 +193,12 @@ onMounted(async () => {
   if (!token) return
 
   try {
-    const res = await axios.get('/api/history', {
+    const res = await axios.get('/api/conversations', {
       headers: { Authorization: `Bearer ${token}` }
     })
-    messages.value = res.data.messages.reverse()  // 后端返回降序，反转成正序
-    await scrollToBottom()
+    conversations.value = res.data
   } catch (err) {
-    console.error('加载历史失败:', err)
+    console.error('加载会话列表失败:', err)
   }
 })
 
@@ -131,52 +212,74 @@ const logout = () => {
 <template>
   <div class="chat-page">
 
-    <!-- ======== 顶部导航栏 ======== -->
-    <header class="topbar">
-      <span class="logo">AIChat</span>
-      <button class="logout-btn" @click="logout">退出</button>
-    </header>
+    <!-- ======== 左侧：会话列表 ======== -->
+  <aside class="sidebar">
+    <button class="new-chat-btn" @click="startNewChat">+ 新对话</button>
+<div class="conv-list">
+  <div
+    v-for="conv in conversations"
+    :key="conv.id"
+    class="conv-item"
+    :class="{ active: conv.id === currentConvId }"
+    @click="selectConversation(conv.id)"
+  >
+    <span class="conv-title">{{ conv.title }}</span>
+    <span class="conv-time">{{ formatTime(conv.updated_at) }}</span>
+  </div>
+</div>
 
-    <!-- ======== 消息列表 ======== -->
-    <div class="message-box" ref="messageBox">
-      <!-- 空状态提示 -->
-      <div v-if="messages.length === 0" class="empty-hint">
-        <h2>有什么可以帮你的？</h2>
-        <p>输入消息开始与 DeepSeek 对话</p>
+  </aside>
+
+  <!-- ========== 右侧：聊天区 ======== -->
+   <div class="chat-body">
+      <!-- ======== 顶部导航栏 ======== -->
+      <header class="topbar">
+        <span class="logo">AIChat</span>
+        <button class="logout-btn" @click="logout">退出</button>
+      </header>
+
+      <!-- ======== 消息列表 ======== -->
+      <div class="message-box" ref="messageBox">
+        <!-- 空状态提示 -->
+        <div v-if="messages.length === 0" class="empty-hint">
+          <h2>有什么可以帮你的？</h2>
+          <p>输入消息开始与 DeepSeek 对话</p>
+        </div>
+
+        <!-- 消息气泡 -->
+        <template v-for="(msg, index) in messages" :key="index">
+        <div
+          v-if="msg.content !== ''"
+          :class="msg.role === 'user' ? 'user-bubble' : 'ai-bubble'">
+          <p>{{ msg.content }}</p>
+        </div>
+      </template>
+
+        <!-- 等待指示器 -->
+        <div v-if="isWaiting && messages[messages.length - 1]?.content === ''" class="ai-bubble">
+            <span class="dot">●</span>
+            <span class="dot">●</span>
+            <span class="dot">●</span>
+        </div>
       </div>
 
-      <!-- 消息气泡 -->
-      <template v-for="(msg, index) in messages" :key="index">
-      <div
-        v-if="msg.content !== ''"
-        :class="msg.role === 'user' ? 'user-bubble' : 'ai-bubble'">
-        <p>{{ msg.content }}</p>
+      <!-- ======== 底部输入区 ======== -->
+      <div class="input-bar">
+        <input
+          v-model="inputText"
+          type="text"
+          placeholder="输入消息..."
+          @keydown.enter="sendMessage"
+        />
+        <button
+          class="send-btn"
+          :disabled="!inputText.trim() || isWaiting"
+          @click="sendMessage"
+        >
+          发送
+        </button>
       </div>
-    </template>
 
-      <!-- 等待指示器 -->
-      <div v-if="isWaiting && messages[messages.length - 1]?.content === ''" class="ai-bubble">
-          <span class="dot">●</span>
-          <span class="dot">●</span>
-          <span class="dot">●</span>
-      </div>
-    </div>
-
-    <!-- ======== 底部输入区 ======== -->
-    <div class="input-bar">
-      <input
-        v-model="inputText"
-        type="text"
-        placeholder="输入消息..."
-        @keydown.enter="sendMessage"
-      />
-      <button
-        class="send-btn"
-        :disabled="!inputText.trim() || isWaiting"
-        @click="sendMessage"
-      >
-        发送
-      </button>
     </div>
 
   </div>
@@ -186,9 +289,77 @@ const logout = () => {
 /* ======== 整体布局 ======== */
 .chat-page {
   display: flex;
-  flex-direction: column;       /* 从上到下：导航 → 消息区 → 输入区 */
+  flex-direction: row;       /* 从上到下：导航 → 消息区 → 输入区 */
   height: 100vh;                 /* 占满全屏 */
   background-color: #f7f8fa;     /* 浅灰背景 */
+}
+
+/* ======== 左侧会话栏 ======== */
+.sidebar {
+  width: 260px;
+  background-color: #fff;
+  border-right: 1px solid #e8e8e8;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 12px;
+  flex-shrink: 0;            /* 不随窗口缩小被压扁 */
+}
+
+.new-chat-btn {
+  width: 100%;
+  padding: 10px 0;
+  background-color: #1677ff;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  margin-bottom: 12px;
+}
+
+.conv-list {
+  flex: 1;                   /* 占满侧栏剩余空间 */
+  overflow-y: auto;          /* 会话多了可滚动 */
+}
+
+/* 会话条目 */
+.conv-item {
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-bottom: 4px;
+}
+
+.conv-item:hover {
+  background-color: #f0f2f5;   /* 悬停——浅灰 */
+}
+
+.conv-item.active {
+  background-color: #e6f0ff;   /* 当前选中——浅蓝 */
+}
+
+.conv-title {
+  display: block;
+  font-size: 14px;
+  color: #333;
+  overflow: hidden;
+  text-overflow: ellipsis;     /* 标题太长——省略号 */
+  white-space: nowrap;
+}
+
+.conv-time {
+  display: block;
+  font-size: 12px;
+  color: #999;
+  margin-top: 4px;
+}
+
+/* ======== 右侧聊天区 ======== */
+.chat-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;              /* 防止消息气泡把 chat-body 撑爆 */
 }
 
 /* ======== 顶部导航 ======== */
