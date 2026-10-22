@@ -152,7 +152,7 @@ def get_conversation(conv_id):
 
     pagination = paginate_query(
     ChatHistory.query.filter_by(conversation_id=conv_id)
-    .order_by(ChatHistory.created_at.asc())
+    .order_by(ChatHistory.created_at.desc(), ChatHistory.id.desc())
     )
 
     return jsonify({
