@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import create_access_token
 from werkzeug.security import generate_password_hash, check_password_hash
-from models import db, User ,ChatHistory
+from models import db, User ,ChatHistory, Conversation
 from datetime import timedelta
 from flask_jwt_extended import jwt_required, get_jwt_identity
 import logger
@@ -75,6 +75,7 @@ def delete_account():
 
     # 先删该用户的聊天记录
     ChatHistory.query.filter_by(user_id=current_user_id).delete()
+    Conversation.query.filter_by(user_id=current_user_id).delete()
 
     db.session.delete(user)
     db.session.commit()
