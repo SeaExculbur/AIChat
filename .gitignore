@@ -25,5 +25,8 @@ Thumbs.db
 # 数据库
 pgdata/
 
+# HTTPS 证书验证临时文件
+certbot/
+
 # 个人文档
 Plan/test/

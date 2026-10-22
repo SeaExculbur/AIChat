@@ -25,8 +25,13 @@ services:
     build: ./frontend
     ports:
       - "80:80"
+      - "443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # certbot 写 ACME 挑战文件用的目录，nginx 只读挂载去提供验证
+      - ./certbot/www:/var/www/certbot:ro
+      # Let's Encrypt 证书，nginx 只读读取
+      - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
       - flask
     restart: unless-stopped
