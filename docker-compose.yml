@@ -2,7 +2,9 @@ services:
   db:
     image: postgres:18-alpine
     volumes:
-      - ./pgdata:/var/lib/postgresql/data
+      # PostgreSQL 18 起 PGDATA 改到 /var/lib/postgresql/18/docker，
+      # 官方镜像声明的卷是 /var/lib/postgresql，不能再挂 .../data
+      - ./pgdata:/var/lib/postgresql
     environment:
       POSTGRES_USER: aichat
       POSTGRES_PASSWORD: aichat_dev
