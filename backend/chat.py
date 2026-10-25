@@ -22,8 +22,10 @@ client = OpenAI(
 
 # 时间序列化——补时区标记后输出 ISO 8601
 def iso_utc(dt):
-    """SQLite 存的是 naive datetime（值本身是 UTC）——补上时区标记。
-    PostgreSQL 读出来是 aware datetime——已有标记，直接输出。"""
+    """时间列都是 DateTime()（timestamp without time zone），SQLite 和 PostgreSQL
+    读出来都是 naive。SQLite 的 CURRENT_TIMESTAMP 是 UTC；PostgreSQL 的 now()
+    会先按数据库会话时区转换再存，容器默认通常是 UTC。这里对 naive 值按 UTC 补标记；
+    如果生产库时区不是 UTC，输出时间会偏。"""
     if dt is None:
         return None
     if dt.tzinfo is None:
