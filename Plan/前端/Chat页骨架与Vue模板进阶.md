@@ -100,6 +100,7 @@ messageBox.value.scrollTop = ... ← 滚动条准确拖到底
 
 `if (messageBox.value)` 是防组件初期 `ref` 还是 `null` 时调用崩溃——虽然正常流程不会走到，但额外安全。移除后 Vue 会在 template 渲染完成时自动填入这个引用。
 
+```js
 const scrollToBottom = async () => {
   await nextTick()              // 等 Vue 把 DOM 更新画完
   messageBox.value.scrollTop = messageBox.value.scrollHeight  // 此时读到的是真实的新高度
