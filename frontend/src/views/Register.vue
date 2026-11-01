@@ -78,6 +78,7 @@ const handleRegister = async () => {
 /* ======== 页面背景：让卡片在屏幕正中央 ======== */
 .page {
   height: 100vh;                    /* 占满整个浏览器窗口高度 */
+  height: 100dvh;
   display: flex;                    /* 开弹性布局 */
   justify-content: center;          /* 水平居中 */
   align-items: center;              /* 垂直居中 */
@@ -86,7 +87,7 @@ const handleRegister = async () => {
 
 /* ======== 卡片容器：白色圆角矩形 ======== */
 .card {
-  width: 400px;
+  width: min(400px, calc(100vw - 32px));
   padding: 40px 32px;               /* 内边距：上下 40px，左右 32px */
   background-color: #fff;           /* 白色背景 */
   border-radius: 12px;              /* 圆角 */

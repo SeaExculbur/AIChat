@@ -17,6 +17,9 @@ const isWaiting = ref(false)
 // 消息列表的 DOM 引用——用于自动滚到底部
 const messageBox = ref(null)
 
+// 抽屉式会话栏管理
+const sidebarOpen = ref(false)
+
 // 会话列表——每条 { id, title, updated_at }
 const conversations = ref([])
 
@@ -75,6 +78,7 @@ const selectConversation = async (id) => {
     const res = await axios.get(`/api/conversations/${id}?page=1&per_page=20`, {
       headers: { Authorization: `Bearer ${token}` }
     })
+    sidebarOpen.value = false
     messages.value = res.data.messages.reverse()   // ⑤ 降序 → 反转成正序
     hasMore.value = res.data.page < res.data.pages  // ⑥ 还有更早的消息吗
     await scrollToBottom()
@@ -86,6 +90,7 @@ const selectConversation = async (id) => {
 // "+ 新对话"——清空回到新会话状态
 const startNewChat = () => {
   if (isWaiting.value) return
+  sidebarOpen.value = false
   currentConvId.value = null
   messages.value = []
   inputText.value = ''
@@ -213,7 +218,7 @@ const logout = () => {
   <div class="chat-page">
 
     <!-- ======== 左侧：会话列表 ======== -->
-  <aside class="sidebar">
+   <aside class="sidebar" :class="{ open: sidebarOpen }">
     <button class="new-chat-btn" @click="startNewChat">+ 新对话</button>
 <div class="conv-list">
   <div
@@ -230,11 +235,17 @@ const logout = () => {
 
   </aside>
 
+  <!-- 移动端抽屉遮罩：点空白处关闭 -->
+  <div v-if="sidebarOpen" class="backdrop" @click="sidebarOpen = false"></div>
+
   <!-- ========== 右侧：聊天区 ======== -->
    <div class="chat-body">
       <!-- ======== 顶部导航栏 ======== -->
       <header class="topbar">
+        <div class="topbar-left">
+          <button class="menu-btn" @click="sidebarOpen = true" aria-label="打开会话列表">☰</button>
         <span class="logo">AIChat</span>
+        </div>
         <button class="logout-btn" @click="logout">退出</button>
       </header>
 
@@ -289,8 +300,9 @@ const logout = () => {
 /* ======== 整体布局 ======== */
 .chat-page {
   display: flex;
-  flex-direction: row;       /* 从上到下：导航 → 消息区 → 输入区 */
+  flex-direction: row;       /* 从左到右：导航 → 消息区 → 输入区 */
   height: 100vh;                 /* 占满全屏 */
+  height: 100dvh;               /* 支持的浏览器用这个覆盖上一行 */
   background-color: #f7f8fa;     /* 浅灰背景 */
 }
 
@@ -370,6 +382,27 @@ const logout = () => {
   padding: 12px 24px;
   background-color: #fff;
   border-bottom: 1px solid #e8e8e8;
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.menu-btn {
+  display: none;              /* 桌面隐藏，只在小屏出现 */
+  border: none;
+  background: none;
+  padding: 4px 8px;
+  font-size: 22px;
+  line-height: 1;
+  color: #1a1a1a;
+  cursor: pointer;
+}
+
+.backdrop {
+  display: none;              /* 桌面不存在，防止窗口拉宽后残留灰层 */
 }
 
 .logo {
@@ -487,7 +520,7 @@ const logout = () => {
   gap: 12px;
   padding: 16px 24px;
   background-color: #fff;
-  border-top: 1px solid #0a0a0a;
+   border-top: 1px solid #e8e8e8;
 }
 
 .input-bar input {
@@ -521,4 +554,58 @@ const logout = () => {
   background-color: #d9d9d9;
   cursor: not-allowed;
 }
+
+/* ======== 移动端适配（<768px） ======== */
+@media (max-width: 767px) {
+  .menu-btn {
+    display: block;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: min(80vw, 300px);
+    height: 100dvh;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    z-index: 100;
+    box-shadow: 2px 0 12px rgba(0, 0, 0, 0.15);
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 99;
+  }
+
+  .topbar {
+    padding: 12px 16px;
+  }
+
+  .message-box {
+    padding: 24px 16px;
+  }
+
+  .user-bubble,
+  .ai-bubble {
+    max-width: 85%;           /* 窄屏放宽，减少折行 */
+  }
+
+  .input-bar {
+    padding: 12px 16px;
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+
+  .input-bar input {
+    font-size: 16px;          /* 低于 16px，iOS 聚焦会放大整页 */
+  }
+}
+
 </style>
