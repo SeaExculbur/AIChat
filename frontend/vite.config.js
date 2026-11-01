@@ -6,7 +6,7 @@ export default defineConfig({
   server: {
     allowedHosts: ['lysun', 'frp-off.com'],
     proxy: {
-      '/api': 'http://localhost:5000'
+      '/api': 'http://localhost:5500'
     }
   }
 })
